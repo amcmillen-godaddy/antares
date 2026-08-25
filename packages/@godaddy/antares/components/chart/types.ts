@@ -51,6 +51,20 @@ export interface LineSeriesConfig<
   tooltipMetadata?: U;
 }
 
+/**
+ * Config for one line-chart series.
+ */
+export interface BarSeriesConfig<
+  T extends object = DataPoint,
+  U extends Record<string, unknown> = Record<string, unknown>
+> extends SeriesConfig<T> {
+  colorIndex?: number;
+  /* Map of category value to color index for bar corresponding to that category */
+  categoryColors?: Record<string, number>;
+  opacity?: number;
+  tooltipMetadata?: U;
+}
+
 export interface InternalSeriesConfig<
   T extends object = DataPoint,
   U extends Record<string, unknown> | undefined = Record<string, unknown>

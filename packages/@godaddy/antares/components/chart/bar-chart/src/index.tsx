@@ -3,8 +3,10 @@ import type {
   AccessorRequirement,
   DataPoint,
   LegendPosition,
-  SeriesConfig,
-  XLabelsOrientation
+  XLabelsOrientation,
+  BarSeriesConfig,
+  Optional,
+  InternalSeriesConfig
 } from '../../types.ts';
 import {
   getXLabelVerticalProps,
@@ -14,7 +16,7 @@ import {
 } from '../../utils.ts';
 import { useNormalizedSeries } from '#components/chart/_internal/use-normalized-series';
 import { useScrollableXYChart } from '#components/chart/_internal/use-scrollable-xy-chart';
-import { ChartColorProvider, useChartColor } from '#components/chart/_internal/use-chart-color';
+import { chartColorForIndex, ChartColorProvider, useChartColor } from '#components/chart/_internal/use-chart-color';
 import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis';
 import { AxisTitle } from '#components/chart/_internal/axis-title';
 import { GridColumns, GridRows } from '@visx/grid';
@@ -35,7 +37,10 @@ import { useBarChart } from './use-bar-chart.ts';
  * Helper type to determine if accessors are required based on data type.
  * @template T - The data point type
  */
-export type BarChartProps<T extends object = DataPoint> = BarChartPropsBase<T> & AccessorRequirement<T>;
+export type BarChartProps<
+  T extends object = DataPoint,
+  S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
+> = BarChartPropsBase<T, S> & AccessorRequirement<T>;
 
 /**
  * Base props for the BarChart component (without accessors).
@@ -47,12 +52,15 @@ export type BarChartProps<T extends object = DataPoint> = BarChartPropsBase<T> &
  * @template T - The data point type. Defaults to DataPoint.
  * @public
  */
-export interface BarChartPropsBase<T extends object = DataPoint> {
+export interface BarChartPropsBase<
+  T extends object = DataPoint,
+  S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
+> {
   /**
    * Configuration for data series.
    * For a single series, provide an array with one element. For multiple series, provide multiple elements.
    */
-  series: SeriesConfig<T>[];
+  series: S[];
 
   /**
    * Orientation of the bars.
@@ -177,9 +185,12 @@ export interface BarChartPropsBase<T extends object = DataPoint> {
 }
 
 /** Props for BarSeries. Internal — not exported. */
-interface BarSeriesProps<T extends object> {
+interface BarSeriesProps<
+  T extends object,
+  S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
+> {
   /** The series config to render bars for. */
-  seriesValue: SeriesConfig<T>;
+  seriesValue: S;
   /** Zero-based index of this series among all series. */
   seriesIndex: number;
   /** Total number of series in the chart. */
@@ -238,6 +249,7 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
     yAccessor
   } = props;
   const fill = useChartColor();
+  const seriesColor = typeof seriesValue.colorIndex === 'number' ? chartColorForIndex(seriesValue.colorIndex) : fill;
   const effectiveSeriesIndex = rtl ? numSeries - 1 - seriesIndex : seriesIndex;
   const groupOffset = (categoryScale.bandwidth() - totalBarWidth) / 2;
   const orderedCategories = rtl ? [...categoryValues].reverse() : categoryValues;
@@ -247,6 +259,10 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
       {orderedCategories.map(function renderBar(catValue, groupIndex) {
         const dataIndex = rtl ? categoryValues.length - 1 - groupIndex : groupIndex;
         const datum = seriesValue.data[dataIndex];
+        const barColor =
+          typeof seriesValue.categoryColors?.[catValue] === 'number'
+            ? chartColorForIndex(seriesValue.categoryColors[catValue])
+            : seriesColor;
 
         if (isVertical) {
           const yValue = yAccessor(datum);
@@ -263,7 +279,8 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
               y={barY}
               width={barWidth}
               height={barHeight}
-              fill={fill}
+              fill={barColor}
+              opacity={seriesValue.opacity ?? 1}
               rx={8}
             />
           );
@@ -283,7 +300,8 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
             y={barY}
             width={barLength}
             height={barWidth}
-            fill={fill}
+            fill={barColor}
+            opacity={seriesValue.opacity ?? 1}
             rx={8}
           />
         );
@@ -634,7 +652,7 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
                 formatValue={function format(value: any) {
                   return String((isVertical ? yAccessor(value) : xAccessor(value)) ?? '');
                 }}
-                series={series as SeriesConfig<DataPoint>[]}
+                series={series as InternalSeriesConfig[]}
               />
             </div>,
             document.body
