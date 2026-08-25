@@ -12,7 +12,8 @@ import {
   getXLabelVerticalProps,
   resolveLegendPosition,
   xAccessor as defaultXAccessor,
-  yAccessor as defaultYAccessor
+  yAccessor as defaultYAccessor,
+  isValidColorIndex
 } from '../../utils.ts';
 import { type ReactNode, useCallback, useMemo } from 'react';
 import { useNormalizedSeries } from '#components/chart/_internal/use-normalized-series';
@@ -281,7 +282,7 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
     yAccessor
   } = props;
   const fill = useChartColor();
-  const seriesColor = typeof seriesValue.colorIndex === 'number' ? chartColorForIndex(seriesValue.colorIndex) : fill;
+  const seriesColor = isValidColorIndex(seriesValue.colorIndex) ? chartColorForIndex(seriesValue.colorIndex) : fill;
   const effectiveSeriesIndex = rtl ? numSeries - 1 - seriesIndex : seriesIndex;
   const groupOffset = (categoryScale.bandwidth() - totalBarWidth) / 2;
   const orderedCategories = rtl ? [...categoryValues].reverse() : categoryValues;
@@ -291,10 +292,9 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
       {orderedCategories.map(function renderBar(catValue, groupIndex) {
         const dataIndex = rtl ? categoryValues.length - 1 - groupIndex : groupIndex;
         const datum = seriesValue.data[dataIndex];
-        const barColor =
-          typeof seriesValue.categoryColors?.[catValue] === 'number'
-            ? chartColorForIndex(seriesValue.categoryColors[catValue])
-            : seriesColor;
+        const barColor = isValidColorIndex(seriesValue.categoryColors?.[catValue])
+          ? chartColorForIndex(seriesValue.categoryColors?.[catValue])
+          : seriesColor;
 
         if (isVertical) {
           const yValue = yAccessor(datum);
@@ -445,15 +445,12 @@ export function BarChart<
     function getSeriesWithColor() {
       return series.map(function attachColor(oneSeries, index) {
         const { colorIndex, categoryColors } = oneSeries;
-        const seriesColor =
-          typeof colorIndex === 'number' && Number.isInteger(colorIndex) && colorIndex >= 0
-            ? chartColorForIndex(colorIndex)
-            : chartColorForIndex(index);
+        const seriesColor = isValidColorIndex(colorIndex) ? chartColorForIndex(colorIndex) : chartColorForIndex(index);
         const resolveDatumColor = categoryColors
           ? function datumColor(datum: T) {
               const category = categoryAccessor(datum);
               const categoryIndex = categoryColors[category as string];
-              return typeof categoryIndex === 'number' ? chartColorForIndex(categoryIndex) : seriesColor;
+              return isValidColorIndex(categoryIndex) ? chartColorForIndex(categoryIndex) : seriesColor;
             }
           : undefined;
         return {
@@ -753,6 +750,7 @@ export function BarChart<
           tooltipData &&
           typeof tooltipTop === 'number' &&
           typeof tooltipLeft === 'number' &&
+          // not sure this check is needed???
           renderTooltip(tooltipData) != null &&
           createPortal(
             <div className={styles.tooltipContainer} style={{ top: tooltipTop, left: tooltipLeft }}>
