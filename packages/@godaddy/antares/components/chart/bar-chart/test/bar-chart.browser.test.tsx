@@ -1,6 +1,6 @@
 import type React from 'react';
 import { BarChart, type BarChartProps } from '../src';
-import type { SeriesConfig } from '../../types';
+import type { BarSeriesConfig, SeriesConfig } from '../../types';
 import { render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 import { describe, it } from 'vitest';
@@ -823,6 +823,115 @@ describe('@godaddy/antares', function antares() {
         // Tooltip is rendered via createPortal to document.body — query from there
         const tooltip = document.body.querySelector('[aria-label="Tooltip data"]');
         assume(tooltip).exists();
+      });
+    });
+
+    describe('#category colors tooltip', function categoryColorsTooltip() {
+      it('resolves the tooltip swatch color from the hovered category', async function perCategorySwatch() {
+        // Same series, two categories pinned to different palette indices. Without
+        // categoryColors both swatches would be the series color; different colors
+        // here prove the tooltip resolves the swatch per hovered datum.
+        const series = [
+          {
+            id: 'series-1',
+            name: 'Test',
+            categoryColors: { A: 2, B: 4 },
+            data: [
+              { x: 'A', y: 100 },
+              { x: 'B', y: 200 },
+              { x: 'C', y: 300 }
+            ]
+          }
+        ] as BarSeriesConfig[];
+
+        const { container } = await renderBarChart({ series });
+
+        const barGroups = container.querySelectorAll('g[role="group"][tabindex="0"]');
+        assume(barGroups.length).is.above(1);
+
+        async function swatchColorForGroup(index: number) {
+          const hitbox = barGroups[index].querySelector('rect[fill="transparent"]');
+          if (hitbox) {
+            await userEvent.hover(hitbox);
+          }
+          await new Promise((r) => setTimeout(r, 10));
+          // The swatch is the only tooltip element with an inline background-color.
+          const swatch = document.body.querySelector('[aria-label="Tooltip data"] [style*="background-color"]');
+          return swatch ? (swatch as HTMLElement).style.backgroundColor : null;
+        }
+
+        const colorA = await swatchColorForGroup(0);
+        const colorB = await swatchColorForGroup(1);
+
+        assume(colorA).exists();
+        assume(colorB).exists();
+        assume(colorA).does.not.equal(colorB);
+      });
+
+      it('renders a custom renderTooltip with a per-category swatch color', async function customTooltip() {
+        const series = [
+          {
+            id: 'current',
+            name: 'Current',
+            categoryColors: { A: 2, B: 4 },
+            data: [
+              { x: 'A', y: 100 },
+              { x: 'B', y: 200 }
+            ]
+          }
+        ] as BarSeriesConfig[];
+
+        const { container } = await renderBarChart({
+          series,
+          renderTooltip: function renderTip({ hoveredCategory, datumByKey, series: resolved }) {
+            const s = resolved[0];
+            const datum = datumByKey[s.id];
+            const color = datum ? s._resolveDatumColor?.(datum) : undefined;
+            return (
+              <div data-testid="custom-tip" data-category={String(hoveredCategory)} data-color={color}>
+                {String(hoveredCategory)}
+              </div>
+            );
+          }
+        });
+
+        const hitbox = container
+          .querySelector('g[role="group"][tabindex="0"]')
+          ?.querySelector('rect[fill="transparent"]');
+        assume(hitbox).exists();
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+
+        const tip = document.body.querySelector('[data-testid="custom-tip"]');
+        assume(tip).exists();
+        // hoveredCategory is the bar group's category, and the swatch color resolves per category.
+        assume(tip!.getAttribute('data-category')).equals('A');
+        assume(tip!.getAttribute('data-color')).exists();
+      });
+
+      it('applies series opacity to the tooltip swatch', async function opacitySwatch() {
+        const series = [
+          { id: 'current', name: 'Current', data: [{ x: 'A', y: 100 }] },
+          { id: 'previous', name: 'Previous', opacity: 0.4, data: [{ x: 'A', y: 80 }] }
+        ] as BarSeriesConfig[];
+
+        const { container } = await renderBarChart({ series });
+
+        const hitbox = container
+          .querySelector('g[role="group"][tabindex="0"]')
+          ?.querySelector('rect[fill="transparent"]');
+        assume(hitbox).exists();
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+
+        // Two rows: full-opacity current, reduced-opacity previous.
+        const swatches = document.body.querySelectorAll('[aria-label="Tooltip data"] [style*="background-color"]');
+        assume(swatches.length).equals(2);
+        assume((swatches[1] as HTMLElement).style.opacity).equals('0.4');
       });
     });
   });

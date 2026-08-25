@@ -14,6 +14,7 @@ import {
   xAccessor as defaultXAccessor,
   yAccessor as defaultYAccessor
 } from '../../utils.ts';
+import { type ReactNode, useCallback, useMemo } from 'react';
 import { useNormalizedSeries } from '#components/chart/_internal/use-normalized-series';
 import { useScrollableXYChart } from '#components/chart/_internal/use-scrollable-xy-chart';
 import { chartColorForIndex, ChartColorProvider, useChartColor } from '#components/chart/_internal/use-chart-color';
@@ -21,7 +22,7 @@ import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis';
 import { AxisTitle } from '#components/chart/_internal/axis-title';
 import { GridColumns, GridRows } from '@visx/grid';
 import { Legend } from '#components/chart/_internal/legend';
-import { Tooltip } from '#components/chart/_internal/tooltip';
+import { Tooltip, TooltipContainer } from '#components/chart/_internal/tooltip';
 import { Flex } from '#components/layout/flex';
 import { Box } from '#components/layout/box';
 import { createPortal } from 'react-dom';
@@ -41,6 +42,23 @@ export type BarChartProps<
   T extends object = DataPoint,
   S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
 > = BarChartPropsBase<T, S> & AccessorRequirement<T>;
+
+/**
+ * Data passed to a custom {@link BarChartPropsBase.renderTooltip} function.
+ *
+ * @public
+ */
+export interface BarChartTooltipRenderProps<
+  T extends object = DataPoint,
+  S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
+> {
+  /** Category value of the hovered bar group (x when vertical, y when horizontal). */
+  hoveredCategory?: number | string | Date | null;
+  /** Datum for each series at the hovered bar group, keyed by series id. */
+  datumByKey: Partial<Record<string, T>>;
+  /** Resolved series in render order. */
+  series: (InternalSeriesConfig<T, S['tooltipMetadata']> & { id: string })[];
+}
 
 /**
  * Base props for the BarChart component (without accessors).
@@ -156,6 +174,20 @@ export interface BarChartPropsBase<
 
   /** Whether to show the tooltip popover on hover. When false, the tooltip is hidden. @default true */
   tooltip?: boolean;
+
+  /**
+   * Format tooltip values.
+   *
+   * @default the value on the category's opposite axis as a string
+   */
+  tooltipValueFormatter?: (datum: T) => string;
+
+  /**
+   * Render a custom tooltip. Receives every series' datum at the hovered bar group, the
+   * hovered category value, and the resolved series list (with per-series and per-category
+   * colors) — see {@link BarChartTooltipRenderProps}. Return falsy to render no popover.
+   */
+  renderTooltip?: (props: BarChartTooltipRenderProps<T, S>) => ReactNode;
 
   /** Outer container width (omitted = 100%) */
   width?: number;
@@ -323,7 +355,10 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
  * @param props - {@link BarChartProps}
  * @returns JSX element rendering the bar chart
  */
-export function BarChart<T extends object>(props: BarChartProps<T>) {
+export function BarChart<
+  T extends object = DataPoint,
+  S extends Optional<BarSeriesConfig<T>, 'id'> = Optional<BarSeriesConfig<T>, 'id'>
+>(props: BarChartProps<T, S>) {
   const {
     orientation = 'vertical',
     height,
@@ -347,6 +382,8 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
     xTickFormat,
     yTickFormat,
     tooltip = true,
+    tooltipValueFormatter,
+    renderTooltip: renderTooltipContent,
     xNumTicks,
     yNumTicks,
     xDomain,
@@ -398,6 +435,77 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
   });
 
   const { innerWidth, innerHeight, svgWidth, svgHeight } = dimensions;
+
+  // Cast away the DataPoint-typed accessor defaults
+  // so they accept the generic datum type.
+  const categoryAccessor = (isVertical ? xAccessor : yAccessor) as (datum: T) => number | string | Date | null;
+  const valueAccessor = (isVertical ? yAccessor : xAccessor) as (datum: T) => number | string | Date | null;
+
+  const seriesWithColor = useMemo(
+    function getSeriesWithColor() {
+      return series.map(function attachColor(oneSeries, index) {
+        const { colorIndex, categoryColors } = oneSeries;
+        const seriesColor =
+          typeof colorIndex === 'number' && Number.isInteger(colorIndex) && colorIndex >= 0
+            ? chartColorForIndex(colorIndex)
+            : chartColorForIndex(index);
+        const resolveDatumColor = categoryColors
+          ? function datumColor(datum: T) {
+              const category = categoryAccessor(datum);
+              const categoryIndex = categoryColors[category as string];
+              return typeof categoryIndex === 'number' ? chartColorForIndex(categoryIndex) : seriesColor;
+            }
+          : undefined;
+        return {
+          ...oneSeries,
+          _resolvedColor: seriesColor,
+          _resolveDatumColor: resolveDatumColor
+        };
+      });
+    },
+    [series, categoryAccessor]
+  );
+
+  const renderTooltip = useCallback(
+    function renderTooltip(data: NonNullable<typeof tooltipData>): ReactNode {
+      if (renderTooltipContent) {
+        const datumByKey: Partial<Record<string, T>> = Object.fromEntries(
+          Object.entries(data.datumByKey).map(function toDatum([key, entry]) {
+            return [key, entry.datum];
+          })
+        );
+        const firstDatum = Object.values(datumByKey)[0];
+        const content = renderTooltipContent({
+          hoveredCategory: firstDatum != null ? categoryAccessor(firstDatum) : undefined,
+          datumByKey,
+          series: seriesWithColor as (InternalSeriesConfig<T> & {
+            id: string;
+          })[]
+        });
+        if (content === null || content === undefined || typeof content === 'boolean') {
+          return null;
+        }
+        return <TooltipContainer>{content}</TooltipContainer>;
+      }
+
+      return (
+        <Tooltip
+          // Narrow to DataPoint overload; Tooltip overloads can't resolve generic T. The bar
+          // tooltip payload is a structural subset of visx's TooltipData, hence the double cast.
+          tooltipData={data as unknown as TooltipData<DataPoint>}
+          showArrow={true}
+          formatValue={
+            (tooltipValueFormatter ??
+              function format(value: T) {
+                return String(valueAccessor(value) ?? '');
+              }) as (datum: DataPoint) => string
+          }
+          series={seriesWithColor as InternalSeriesConfig[]}
+        />
+      );
+    },
+    [renderTooltipContent, seriesWithColor, categoryAccessor, valueAccessor, tooltipValueFormatter]
+  );
 
   const effectiveLegendPosition = resolveLegendPosition(legendPosition, series.length);
 
@@ -464,7 +572,9 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
       >
         {yAxisTitle && <AxisTitle axis="y" title={yAxisTitle} />}
         <Flex direction="column" flex={1} className={styles.wrapper}>
-          {effectiveLegendPosition === 'top' && <Legend series={series} className={styles.legend} alignSelf="center" />}
+          {effectiveLegendPosition === 'top' && (
+            <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
+          )}
           <Box ref={parentRef} dir={direction} className={styles.area}>
             {series && chartWidth > 0 && chartHeight > 0 && (
               <svg
@@ -634,7 +744,7 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
           </Box>
           {xAxisTitle && <AxisTitle axis="x" title={xAxisTitle} />}
           {effectiveLegendPosition === 'bottom' && (
-            <Legend series={series} className={styles.legend} alignSelf="center" />
+            <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
           )}
         </Flex>
 
@@ -643,17 +753,10 @@ export function BarChart<T extends object>(props: BarChartProps<T>) {
           tooltipData &&
           typeof tooltipTop === 'number' &&
           typeof tooltipLeft === 'number' &&
+          renderTooltip(tooltipData) != null &&
           createPortal(
             <div className={styles.tooltipContainer} style={{ top: tooltipTop, left: tooltipLeft }}>
-              {/* Narrow to DataPoint overload; Tooltip overloads can't resolve generic T */}
-              <Tooltip
-                tooltipData={tooltipData as TooltipData<DataPoint> | undefined}
-                showArrow={true}
-                formatValue={function format(value: any) {
-                  return String((isVertical ? yAccessor(value) : xAccessor(value)) ?? '');
-                }}
-                series={series as InternalSeriesConfig[]}
-              />
+              {renderTooltip(tooltipData)}
             </div>,
             document.body
           )}
