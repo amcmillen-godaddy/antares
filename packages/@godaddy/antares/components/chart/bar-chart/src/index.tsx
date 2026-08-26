@@ -443,9 +443,9 @@ export function BarChart<
 
   const seriesWithColor = useMemo(
     function getSeriesWithColor() {
-      return series.map(function attachColor(oneSeries, index) {
+      return series.map(function attachColor(oneSeries) {
         const { colorIndex, categoryColors } = oneSeries;
-        const seriesColor = isValidColorIndex(colorIndex) ? chartColorForIndex(colorIndex) : chartColorForIndex(index);
+        const seriesColor = isValidColorIndex(colorIndex) ? chartColorForIndex(colorIndex) : undefined;
         const resolveDatumColor = categoryColors
           ? function datumColor(datum: T) {
               const category = categoryAccessor(datum);

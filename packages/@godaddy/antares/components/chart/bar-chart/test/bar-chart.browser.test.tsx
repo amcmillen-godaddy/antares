@@ -912,9 +912,11 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('applies series opacity to the tooltip swatch', async function opacitySwatch() {
+        // Mirrors the period-comparison pattern: both series share one palette color
+        // (colorIndex) and the comparison series is distinguished by reduced opacity.
         const series = [
-          { id: 'current', name: 'Current', data: [{ x: 'A', y: 100 }] },
-          { id: 'previous', name: 'Previous', opacity: 0.4, data: [{ x: 'A', y: 80 }] }
+          { id: 'current', name: 'Current', colorIndex: 1, data: [{ x: 'A', y: 100 }] },
+          { id: 'previous', name: 'Previous', colorIndex: 1, opacity: 0.4, data: [{ x: 'A', y: 80 }] }
         ] as BarSeriesConfig[];
 
         const { container } = await renderBarChart({ series });
