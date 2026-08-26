@@ -506,6 +506,11 @@ export function BarChart<
 
   const effectiveLegendPosition = resolveLegendPosition(legendPosition, series.length);
 
+  const tooltipNode =
+    tooltip && tooltipOpen && tooltipData && typeof tooltipTop === 'number' && typeof tooltipLeft === 'number'
+      ? renderTooltip(tooltipData)
+      : null;
+
   function renderBarHitbox(catValue: any, groupIndex: number) {
     const dataIndex = rtl ? categoryValues.length - 1 - groupIndex : groupIndex;
 
@@ -745,16 +750,10 @@ export function BarChart<
           )}
         </Flex>
 
-        {tooltip &&
-          tooltipOpen &&
-          tooltipData &&
-          typeof tooltipTop === 'number' &&
-          typeof tooltipLeft === 'number' &&
-          // not sure this check is needed???
-          renderTooltip(tooltipData) != null &&
+        {tooltipNode != null &&
           createPortal(
             <div className={styles.tooltipContainer} style={{ top: tooltipTop, left: tooltipLeft }}>
-              {renderTooltip(tooltipData)}
+              {tooltipNode}
             </div>,
             document.body
           )}
