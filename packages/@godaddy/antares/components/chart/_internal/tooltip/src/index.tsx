@@ -131,9 +131,10 @@ export function Tooltip<T extends object = DataPoint>(
                   <Box
                     className={styles.swatch}
                     rounding="full"
-                    style={
-                      item._resolvedColor ? { backgroundColor: item._resolvedColor, opacity: item.opacity } : undefined
-                    }
+                    style={{
+                      opacity: item.opacity ?? undefined,
+                      backgroundColor: item._resolvedColor || undefined
+                    }}
                   />
                 ) : (
                   item.variant && (
