@@ -293,9 +293,9 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
       {orderedCategories.map(function renderBar(catValue, groupIndex) {
         const dataIndex = rtl ? categoryValues.length - 1 - groupIndex : groupIndex;
         const datum = seriesValue.data[dataIndex];
-        const barColor = isValidColorIndex(seriesValue.categoryColors?.[catValue])
-          ? chartColorForIndex(seriesValue.categoryColors?.[catValue])
-          : seriesColor;
+        // categoryColors is keyed by string; coerce so Date/number categories look up consistently.
+        const categoryColorIndex = seriesValue.categoryColors?.[String(catValue)];
+        const barColor = isValidColorIndex(categoryColorIndex) ? chartColorForIndex(categoryColorIndex) : seriesColor;
 
         if (isVertical) {
           const yValue = yAccessor(datum);
