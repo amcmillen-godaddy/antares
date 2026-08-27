@@ -474,9 +474,17 @@ export function BarChart<
         );
         const firstDatum = Object.values(datumByKey)[0];
         const tooltipSeries = seriesWithColor.map(function withTooltipColor(oneSeries, index) {
-          return oneSeries._resolvedColor || oneSeries._resolveDatumColor
-            ? oneSeries
-            : { ...oneSeries, _resolvedColor: chartColorForIndex(index) };
+          const defaultColor = chartColorForIndex(index);
+          const resolveDatumColor = oneSeries._resolveDatumColor
+            ? function resolveDatumColorWithDefault(datum: T) {
+                return oneSeries._resolveDatumColor?.(datum) ?? defaultColor;
+              }
+            : undefined;
+          return {
+            ...oneSeries,
+            _resolvedColor: oneSeries._resolvedColor ?? defaultColor,
+            _resolveDatumColor: resolveDatumColor
+          };
         });
         const content = renderTooltipContent({
           hoveredCategory: firstDatum != null ? categoryAccessor(firstDatum) : undefined,
