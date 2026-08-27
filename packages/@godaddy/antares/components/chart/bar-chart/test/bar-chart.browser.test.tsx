@@ -936,5 +936,62 @@ describe('@godaddy/antares', function antares() {
         assume((swatches[1] as HTMLElement).style.opacity).equals('0.4');
       });
     });
+
+    describe('#tooltipValueFormatter', function tooltipValueFormatterProp() {
+      it('formats the tooltip value with tooltipValueFormatter in vertical mode', async function verticalFormatter() {
+        // Default formatting shows the raw y ("100"); the currency-formatted output is
+        // distinct, so a match proves the formatter ran instead of the default.
+        const { container } = await renderBarChart({
+          tooltipValueFormatter: (d: { x: string; y: number }) => `$${d.y.toFixed(2)}`
+        });
+
+        const hitbox = container
+          .querySelector('g[role="group"][tabindex="0"]')
+          ?.querySelector('rect[fill="transparent"]');
+        assume(hitbox).exists();
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+
+        const tooltip = document.body.querySelector('[aria-label="Tooltip data"]');
+        assume(tooltip).exists();
+        assume(tooltip!.textContent).contains('$100.00');
+      });
+
+      it('formats the tooltip value from the value accessor in horizontal mode', async function horizontalFormatter() {
+        // In horizontal orientation the value is x (y is the category), so the formatter
+        // reads x — verifying the formatted value follows the orientation's value accessor.
+        const series = [
+          {
+            id: 'series-1',
+            name: 'Test',
+            data: [
+              { x: 100, y: 'Category A' },
+              { x: 200, y: 'Category B' }
+            ]
+          }
+        ] as SeriesConfig[];
+
+        const { container } = await renderBarChart({
+          series,
+          orientation: 'horizontal',
+          tooltipValueFormatter: (d: { x: number; y: string }) => `${d.x} units`
+        });
+
+        const hitbox = container
+          .querySelector('g[role="group"][tabindex="0"]')
+          ?.querySelector('rect[fill="transparent"]');
+        assume(hitbox).exists();
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+
+        const tooltip = document.body.querySelector('[aria-label="Tooltip data"]');
+        assume(tooltip).exists();
+        assume(tooltip!.textContent).contains('100 units');
+      });
+    });
   });
 });
