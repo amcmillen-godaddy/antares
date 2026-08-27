@@ -186,7 +186,8 @@ export interface BarChartPropsBase<
   /**
    * Render a custom tooltip. Receives every series' datum at the hovered bar group, the
    * hovered category value, and the resolved series list (with per-series and per-category
-   * colors) — see {@link BarChartTooltipRenderProps}. Return falsy to render no popover.
+   * colors) — see {@link BarChartTooltipRenderProps}. Return null, undefined, or
+   * a boolean to render no popover.
    */
   renderTooltip?: (props: BarChartTooltipRenderProps<T, S>) => ReactNode;
 
@@ -475,7 +476,7 @@ export function BarChart<
         const content = renderTooltipContent({
           hoveredCategory: firstDatum != null ? categoryAccessor(firstDatum) : undefined,
           datumByKey,
-          series: seriesWithColor as (InternalSeriesConfig<T> & {
+          series: seriesWithColor as (InternalSeriesConfig<T, S['tooltipMetadata']> & {
             id: string;
           })[]
         });
