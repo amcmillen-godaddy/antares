@@ -473,10 +473,15 @@ export function BarChart<
           })
         );
         const firstDatum = Object.values(datumByKey)[0];
+        const tooltipSeries = seriesWithColor.map(function withTooltipColor(oneSeries, index) {
+          return oneSeries._resolvedColor || oneSeries._resolveDatumColor
+            ? oneSeries
+            : { ...oneSeries, _resolvedColor: chartColorForIndex(index) };
+        });
         const content = renderTooltipContent({
           hoveredCategory: firstDatum != null ? categoryAccessor(firstDatum) : undefined,
           datumByKey,
-          series: seriesWithColor as (InternalSeriesConfig<T, S['tooltipMetadata']> & {
+          series: tooltipSeries as (InternalSeriesConfig<T, S['tooltipMetadata']> & {
             id: string;
           })[]
         });
