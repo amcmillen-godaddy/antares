@@ -993,5 +993,163 @@ describe('@godaddy/antares', function antares() {
         assume(tooltip!.textContent).contains('100 units');
       });
     });
+
+    describe('#color consistency (sparse data)', function colorConsistency() {
+      // First three positional palette colors (chartColorForIndex 0/1/2), used to assert
+      // the bar fill, legend swatch, and tooltip swatch all resolve to the same value.
+      const COLOR_0 = 'var(--ux-k4t5bc)';
+      const COLOR_1 = 'var(--ux-yscvvt)';
+      const COLOR_2 = 'var(--ux-3seoiy)';
+      const COLOR_3 = 'var(--ux-ifyf3f)';
+
+      function legendSwatchColors(container: HTMLElement): string[] {
+        const swatches = container.querySelectorAll(
+          '[aria-label="Chart legend"] [role="listitem"] [style*="background-color"]'
+        );
+        return Array.from(swatches).map((el) => (el as HTMLElement).style.backgroundColor);
+      }
+
+      function barFills(container: HTMLElement): string[] {
+        return Array.from(container.querySelectorAll('rect[rx="8"]')).map((el) => el.getAttribute('fill') ?? '');
+      }
+
+      async function hoverGroup(container: HTMLElement, index: number) {
+        const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
+        const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      it('gives a category missing from categoryColors the series default, matching bar, legend, and tooltip', async function sparseCategoryColors() {
+        // Only 'A' is mapped (to palette index 3); 'B' and 'C' are absent from the map, so
+        // they must fall back to the series' positional default (index 0) — the same color the
+        // bar and legend use. This is the sparse-map case the tooltipSeries fallback covers.
+        const series = [
+          {
+            id: 'series-1',
+            name: 'Only A mapped',
+            categoryColors: { A: 3 },
+            data: [
+              { x: 'A', y: 100 },
+              { x: 'B', y: 200 },
+              { x: 'C', y: 300 }
+            ]
+          }
+        ] as BarSeriesConfig[];
+
+        const { container } = await renderBarChart({
+          series,
+          legendPosition: 'bottom',
+          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+            const s = resolved[0];
+            const datum = datumByKey[s.id];
+            const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
+            return <div data-testid="tip" data-color={color} />;
+          }
+        });
+
+        // Bars render in category order: A (mapped -> index 3), B and C (unmapped -> index 0).
+        const fills = barFills(container);
+        assume(fills[0]).equals(COLOR_3);
+        assume(fills[1]).equals(COLOR_0);
+        assume(fills[2]).equals(COLOR_0);
+
+        // Legend shows the series' positional default (categoryColors is per-bar, not per-series).
+        assume(legendSwatchColors(container)[0]).equals(COLOR_0);
+
+        // Hovering the mapped category resolves the mapped color, matching bar A.
+        await hoverGroup(container, 0);
+        const mappedTip = document.body.querySelector('[data-testid="tip"]');
+        assume(mappedTip!.getAttribute('data-color')).equals(COLOR_3);
+
+        // Hovering an unmapped category resolves the default, matching bar B and the legend.
+        await hoverGroup(container, 1);
+        const unmappedTip = document.body.querySelector('[data-testid="tip"]');
+        assume(unmappedTip!.getAttribute('data-color')).equals(COLOR_0);
+      });
+
+      it('keeps each series color stable across bar, legend, and tooltip when sparse data shifts bar slots', async function sparseMultiSeries() {
+        // Three series with gaps (null) and a zero value, so different bars are present per group
+        // and slots go empty. Colors must stay keyed to the series (index 0/1/2), never to the
+        // visible bar position — otherwise a series would borrow a missing neighbor's color.
+        const series = [
+          {
+            id: 'S0',
+            name: 'Series 0',
+            data: [
+              { x: 'A', y: 10 },
+              { x: 'B', y: 0 },
+              { x: 'C', y: 30 }
+            ]
+          },
+          {
+            id: 'S1',
+            name: 'Series 1',
+            data: [
+              { x: 'A', y: null },
+              { x: 'B', y: 20 },
+              { x: 'C', y: 25 }
+            ]
+          },
+          {
+            id: 'S2',
+            name: 'Series 2',
+            data: [
+              { x: 'A', y: 5 },
+              { x: 'B', y: null },
+              { x: 'C', y: 15 }
+            ]
+          }
+        ] as BarSeriesConfig[];
+
+        const { container } = await renderBarChart({
+          series,
+          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+            return (
+              <div data-testid="tip">
+                {resolved.map(function seriesSwatch(s) {
+                  const datum = datumByKey[s.id];
+                  const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
+                  return <span key={s.id} data-series={s.id} data-color={color} />;
+                })}
+              </div>
+            );
+          }
+        });
+
+        // Legend: one swatch per series, in positional palette order.
+        const legend = legendSwatchColors(container);
+        assume(legend[0]).equals(COLOR_0);
+        assume(legend[1]).equals(COLOR_1);
+        assume(legend[2]).equals(COLOR_2);
+
+        // Bars: S0 has 3 (incl. the zero bar), S1 and S2 have 2 each (null skipped). Each series'
+        // bars all share its positional color, regardless of slot gaps.
+        const fills = barFills(container);
+        const counts = fills.reduce<Record<string, number>>(function tally(acc, f) {
+          acc[f] = (acc[f] ?? 0) + 1;
+          return acc;
+        }, {});
+        assume(counts[COLOR_0]).equals(3);
+        assume(counts[COLOR_1]).equals(2);
+        assume(counts[COLOR_2]).equals(2);
+        // No stray colors beyond the three series colors.
+        assume(Object.keys(counts).sort().join(',')).equals([COLOR_0, COLOR_1, COLOR_2].sort().join(','));
+
+        // Group A: S1 is absent (its slot is empty), so the visible bars are S0 (slot 0) and S2
+        // (slot 2). The tooltip must still report S2 as index 2 — not shift it into S1's color.
+        await hoverGroup(container, 0);
+        const tip = document.body.querySelector('[data-testid="tip"]');
+        assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
+        assume(tip!.querySelector('[data-series="S1"]')!.getAttribute('data-color')).equals(COLOR_1);
+        assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(COLOR_2);
+
+        // Each tooltip color matches the legend swatch for the same series.
+        assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(legend[0]);
+        assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(legend[2]);
+      });
+    });
   });
 });
