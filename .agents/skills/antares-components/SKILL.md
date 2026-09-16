@@ -39,7 +39,7 @@ A small component defines itself right there, as `alert` and `tabs` do. Past tha
 - `structure/src/index.tsx` re-exports `header.tsx`, `content.tsx`, `footer.tsx`, and `button-group.tsx`, and nothing else. That folder has no CSS at all, because its regions are built from layout components.
 - `carousel/src/` keeps its hooks beside it: `use-accessibility.tsx`, `use-navigation-controls.tsx`.
 
-Each styled component gets its own stylesheet, so `text/src/` has both `index.module.css` and `heading.module.css`.
+Each styled component gets its own stylesheet, so `heading/src/` has `index.module.css` beside `index.tsx`.
 
 ### Naming and grouping
 
@@ -120,6 +120,30 @@ Styled components keep their CSS in `src/index.module.css`. Three rules hold eve
 - Keep every selector at maximum **0-1-0** specificity. Wrap state, attribute, and element selectors in `:where()`, for example `&:where([data-hovered])`, `.overlay:where([data-entering])`, `.header :where([slot="close"])`. If a rule truly has to go higher (to beat an inline style or a third-party stylesheet), add a comment saying why.
 
 **`references/styling.md` has the rest: focus and disabled recipes, value conventions, spacing tokens, and custom properties.**
+
+## Motion
+
+Use motion only when it clarifies feedback, state, or spatial relationships. Spatial motion on something that changes many times a day turns into noise, though its color and opacity feedback can stay. On something that changes rarely, motion helps users track what moved and where it came from. Keyboard response, focus, and activation are always immediate.
+
+Pick a role, then take its value from the ladder. One element can hold two roles, as the Checkbox indicator does with a `Feedback` fill and a `Spatial` press scale.
+
+| Role | When to use | Default |
+| --- | --- | --- |
+| `None` | High frequency, keyboard driven, or purely structural changes | No transition |
+| `Feedback` | Color, border, opacity, and outline changes | `150ms ease`, or `150ms linear` for determinate progress |
+| `Surface` | Anchored overlays and centered modals | `cubic-bezier(0.23, 1, 0.32, 1)` at `125ms` tooltip weight, `200ms` popover and modal weight |
+| `Spatial` | Movement that explains where something came from | `150ms` short transform, `200ms` measured indicator, `250ms` drawer, `300ms` `InlineDrawer` |
+
+Mandatory rules:
+
+- Write durations in `ms`. Name every property; no `transition: all`, no `ease-in-out`.
+- Prefer `transform` and `opacity`. Animate layout only when the geometry is the meaning.
+- Preserve RAC ownership of state, positioning, focus, keyboard handling, and dismiss behavior.
+- Branch on `prefers-reduced-motion` for every spatial transition, keeping the non-spatial feedback.
+- Gate hover motion behind `@media (hover: hover) and (pointer: fine)`.
+- Anchor overlay `transform-origin` on `--trigger-anchor-point`, falling back to the placement edge. `Modal` stays centered.
+
+**Read `references/motion.md` before editing motion.** It carries the full ladder, the reduced-motion patterns, the surface entry shape, and the RTL consequences of moving to `transform`.
 
 ## Examples, tests, and docs
 
