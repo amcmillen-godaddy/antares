@@ -16,7 +16,7 @@ import { BarChart } from '@godaddy/antares';
  */
 export function CategoryColorsExample(props: any) {
   // Sales channel → palette color index. `Marketplace` and `Gift Cards` are intentionally
-  // omitted so they fall back to each series' default color. Indices start at 2 to keep the
+  // omitted so they fall back to each series' default color. Indices start at 3 to keep the
   // mapped channels distinct from those per-series defaults (0, 1, 2).
   const categoryColors = {
     'In Person': 3,
