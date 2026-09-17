@@ -106,6 +106,20 @@ describe('@godaddy/antares', function antares() {
         const { container } = await renderExampleAndWait(CustomTooltipPeriodComparisonExample);
 
         assume(container.querySelector('svg')).exists();
+
+        // Hover a bar group's hitbox so the custom tooltip renders. Each group is a
+        // `<Group role="group">` wrapping a transparent hover `<rect>`; pick a middle group so
+        // the tooltip is fully visible. Its position is derived from the group index (not the
+        // pointer location), so the capture stays deterministic.
+        const hitboxes = container.querySelectorAll('[role="group"] rect');
+        const hitbox = hitboxes[Math.floor(hitboxes.length / 2)];
+        assume(hitbox).exists();
+        await page.elementLocator(hitbox).hover();
+
+        // The tooltip is portaled to document.body, so wait for it on the page (not `container`)
+        // before capturing; otherwise the screenshot races the tooltip's appearance.
+        await expect.element(page.getByText('Net Payments', { exact: true })).toBeVisible();
+
         await expect(container).toMatchScreenshot('custom-tooltip-period-comparison');
       });
     });
