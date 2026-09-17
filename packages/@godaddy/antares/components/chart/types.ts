@@ -52,7 +52,7 @@ export interface LineSeriesConfig<
 }
 
 /**
- * Config for one bar-chart series.
+ * Config for one bar chart series.
  */
 export interface BarSeriesConfig<
   T extends object = DataPoint,
