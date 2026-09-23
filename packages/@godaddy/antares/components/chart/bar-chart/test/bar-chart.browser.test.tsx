@@ -121,7 +121,10 @@ describe('@godaddy/antares', function antares() {
             data: [{ x: 'Jan', y: 150 }]
           }
         ];
-        const { container, locator } = await renderBarChart({ series, legendPosition: 'top' });
+        const { container, locator } = await renderBarChart({
+          series,
+          legendPosition: 'top'
+        });
 
         const legendElement = container.querySelector('[aria-label="Chart legend"]');
         assume(legendElement).exists();
@@ -143,7 +146,10 @@ describe('@godaddy/antares', function antares() {
             data: [{ x: 'Jan', y: 100 }]
           }
         ];
-        const { container } = await renderBarChart({ series, legendPosition: 'top' });
+        const { container } = await renderBarChart({
+          series,
+          legendPosition: 'top'
+        });
 
         const legendElement = container.querySelector('[aria-label="Chart legend"]');
         assume(legendElement).exists();
@@ -208,7 +214,10 @@ describe('@godaddy/antares', function antares() {
 
     describe('#gridlines', function gridlinesProp() {
       it('renders with gridlines when xGridlines and yGridlines are true', async function defaultGridlines() {
-        const { container } = await renderBarChart({ xGridlines: true, yGridlines: true });
+        const { container } = await renderBarChart({
+          xGridlines: true,
+          yGridlines: true
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -219,7 +228,10 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('hides x-gridlines when xGridlines is false', async function noXGridlines() {
-        const { container } = await renderBarChart({ xGridlines: false, yGridlines: true });
+        const { container } = await renderBarChart({
+          xGridlines: false,
+          yGridlines: true
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -231,7 +243,10 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('hides y-gridlines when yGridlines is false', async function noYGridlines() {
-        const { container } = await renderBarChart({ yGridlines: false, xGridlines: true });
+        const { container } = await renderBarChart({
+          yGridlines: false,
+          xGridlines: true
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -434,7 +449,11 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('hides y-axis when yBaseline, yTickMarks, and yLabels are false', async function noYBaseline() {
-        const { container } = await renderBarChart({ yBaseline: false, yTickMarks: false, yLabels: false });
+        const { container } = await renderBarChart({
+          yBaseline: false,
+          yTickMarks: false,
+          yLabels: false
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -601,7 +620,10 @@ describe('@godaddy/antares', function antares() {
 
         function formatDateTick(value: Date | string | number) {
           if (value instanceof Date) {
-            return value.toLocaleString('en-US', { month: 'short', day: 'numeric' });
+            return value.toLocaleString('en-US', {
+              month: 'short',
+              day: 'numeric'
+            });
           }
           return String(value);
         }
@@ -675,14 +697,20 @@ describe('@godaddy/antares', function antares() {
       ];
 
       it('renders bars in horizontal mode', async function horizontalBars() {
-        const { container } = await renderBarChart({ series: horizontalSeries, orientation: 'horizontal' });
+        const { container } = await renderBarChart({
+          series: horizontalSeries,
+          orientation: 'horizontal'
+        });
 
         const bars = container.querySelectorAll('rect[rx="8"]');
         assume(bars.length).is.at.least(3);
       });
 
       it('renders AxisBottom as the value axis in horizontal mode', async function horizontalAxisBottom() {
-        const { container } = await renderBarChart({ series: horizontalSeries, orientation: 'horizontal' });
+        const { container } = await renderBarChart({
+          series: horizontalSeries,
+          orientation: 'horizontal'
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -693,7 +721,10 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('renders AxisLeft as the category axis in horizontal mode (LTR)', async function horizontalAxisLeft() {
-        const { container } = await renderBarChart({ series: horizontalSeries, orientation: 'horizontal' });
+        const { container } = await renderBarChart({
+          series: horizontalSeries,
+          orientation: 'horizontal'
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -704,7 +735,10 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('shows tooltip on hover in horizontal mode', async function horizontalTooltip() {
-        const { container } = await renderBarChart({ series: horizontalSeries, orientation: 'horizontal' });
+        const { container } = await renderBarChart({
+          series: horizontalSeries,
+          orientation: 'horizontal'
+        });
 
         const barGroups = container.querySelectorAll('g[role="group"][tabindex="0"]');
         assume(barGroups.length).is.above(0);
@@ -725,7 +759,9 @@ describe('@godaddy/antares', function antares() {
 
     describe('#accessibility', function accessibilityTests() {
       it('sets aria-label on the SVG element', async function ariaLabel() {
-        const { container } = await renderBarChart({ 'aria-label': 'Monthly sales chart' });
+        const { container } = await renderBarChart({
+          'aria-label': 'Monthly sales chart'
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -733,7 +769,9 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('renders a desc element inside SVG when desc prop is provided', async function descElement() {
-        const { container } = await renderBarChart({ desc: 'A chart showing sales by month' });
+        const { container } = await renderBarChart({
+          desc: 'A chart showing sales by month'
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -744,7 +782,9 @@ describe('@godaddy/antares', function antares() {
       });
 
       it('sets aria-describedby on SVG when desc prop is provided', async function ariaDescribedby() {
-        const { container } = await renderBarChart({ desc: 'Sales data description' });
+        const { container } = await renderBarChart({
+          desc: 'Sales data description'
+        });
 
         const svg = container.querySelector('svg');
         assume(svg).exists();
@@ -795,7 +835,10 @@ describe('@godaddy/antares', function antares() {
           }
         ] as SeriesConfig[];
 
-        const { container } = await renderBarChart({ series, orientation: 'horizontal' });
+        const { container } = await renderBarChart({
+          series,
+          orientation: 'horizontal'
+        });
 
         // Only 2 bars should render (x: null is skipped at runtime)
         const bars = container.querySelectorAll('rect[rx="8"]');
@@ -915,8 +958,19 @@ describe('@godaddy/antares', function antares() {
         // Mirrors the period-comparison pattern: both series share one palette color
         // (colorIndex) and the comparison series is distinguished by reduced opacity.
         const series = [
-          { id: 'current', name: 'Current', colorIndex: 1, data: [{ x: 'A', y: 100 }] },
-          { id: 'previous', name: 'Previous', colorIndex: 1, opacity: 0.4, data: [{ x: 'A', y: 80 }] }
+          {
+            id: 'current',
+            name: 'Current',
+            colorIndex: 1,
+            data: [{ x: 'A', y: 100 }]
+          },
+          {
+            id: 'previous',
+            name: 'Previous',
+            colorIndex: 1,
+            opacity: 0.4,
+            data: [{ x: 'A', y: 80 }]
+          }
         ] as BarSeriesConfig[];
 
         const { container } = await renderBarChart({ series });
@@ -1149,6 +1203,74 @@ describe('@godaddy/antares', function antares() {
         // Each tooltip color matches the legend swatch for the same series.
         assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(legend[0]);
         assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(legend[2]);
+      });
+    });
+
+    describe('#sparse categories (misaligned series lengths)', function sparseCategories() {
+      async function hoverGroup(container: HTMLElement, index: number) {
+        const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
+        const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      const series = [
+        {
+          id: 'full',
+          name: 'Full',
+          data: [
+            { x: 'A', y: 10 },
+            { x: 'B', y: 20 },
+            { x: 'C', y: 30 }
+          ]
+        },
+        {
+          id: 'sparse',
+          name: 'Sparse',
+          data: [
+            { x: 'A', y: 100 },
+            { x: 'C', y: 300 }
+          ]
+        }
+      ] as BarSeriesConfig[];
+
+      it('renders a bar per present category and none for a category the series omits', async function barsPerCategory() {
+        const { container } = await renderBarChart({ series });
+
+        const bars = container.querySelectorAll('rect[rx="8"]');
+        assume(bars.length).equals(5);
+      });
+
+      it('resolves each tooltip datum by category value, not array position', async function datumByCategory() {
+        const { container } = await renderBarChart({
+          series,
+          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+            return (
+              <div data-testid="tip">
+                {resolved.map(function seriesRow(s) {
+                  const datum = datumByKey[s.id];
+                  return datum ? <span key={s.id} data-series={s.id} data-value={String(datum.y)} /> : null;
+                })}
+              </div>
+            );
+          }
+        });
+
+        // Category B (group 1): only 'full' has a datum. 'sparse' must be absent here — a
+        // positional lookup would wrongly surface sparse.data[1] (its 'C' value, 300) under 'B'.
+        await hoverGroup(container, 1);
+        const bTip = document.body.querySelector('[data-testid="tip"]')!;
+        assume(bTip.querySelector('[data-series="full"]')!.getAttribute('data-value')).equals('20');
+        assume(bTip.querySelector('[data-series="sparse"]')).is.a('null');
+
+        // Category C (group 2): 'sparse' resolves to its own 'C' datum (300), not undefined or a
+        // shifted slot, alongside 'full' (30).
+        await hoverGroup(container, 2);
+        const cTip = document.body.querySelector('[data-testid="tip"]')!;
+        assume(cTip.querySelector('[data-series="full"]')!.getAttribute('data-value')).equals('30');
+        assume(cTip.querySelector('[data-series="sparse"]')!.getAttribute('data-value')).equals('300');
       });
     });
   });

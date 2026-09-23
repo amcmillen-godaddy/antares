@@ -19,6 +19,18 @@ export interface BarTooltipData<T = unknown> {
 }
 
 /**
+ * Normalizes a category value to a stable string key so equal categories compare equal
+ * regardless of type.
+ *
+ * @param value - A category value (or null/undefined)
+ * @returns A string key, or null when there is no category
+ */
+function categoryKey(value: number | string | Date | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  return value instanceof Date ? value.getTime().toString() : String(value);
+}
+
+/**
  * Extracts the ordered list of unique category values across all series.
  * In vertical orientation, categories come from xAccessor; in horizontal, from yAccessor.
  * Deduplication uses string key comparison so that Dates with the same timestamp are treated as equal.
@@ -44,7 +56,7 @@ export function getCategoryValues<T extends object>(
     for (const d of s.data) {
       const v = accessor(d);
       if (v === null || v === undefined) continue;
-      const key = v instanceof Date ? v.getTime().toString() : String(v);
+      const key = categoryKey(v) as string;
       if (!seen.has(key)) {
         seen.add(key);
         values.push(v as number | string | Date);
@@ -52,6 +64,29 @@ export function getCategoryValues<T extends object>(
     }
   }
   return values;
+}
+
+/**
+ * Finds the datum in a series whose category matches `catValue`. Matching is by category
+ * value (via the category accessor), not by array position, so a series with genuinely sparse
+ * data — e.g. `[A, C]` against a global `[A, B, C]` — associates each value with the right
+ * category instead of the slot it happens to occupy. Returns undefined when the series has no
+ * datum for that category, letting callers skip rendering a bar or tooltip row for it.
+ *
+ * @param data - The series data points
+ * @param categoryAccessor - Extracts the category value from a datum (x when vertical, y when horizontal)
+ * @param catValue - The category value to match
+ * @returns The matching datum, or undefined if the series has none for that category
+ */
+export function findDatumByCategory<T>(
+  data: readonly T[],
+  categoryAccessor: (d: T) => number | string | Date | null,
+  catValue: number | string | Date
+): T | undefined {
+  const targetKey = categoryKey(catValue);
+  return data.find(function matchesCategory(d) {
+    return categoryKey(categoryAccessor(d)) === targetKey;
+  });
 }
 
 /**
@@ -196,15 +231,26 @@ export function computeTooltipPosition({
   xAccessor,
   yAccessor
 }: TooltipPositionOptions) {
-  const datumByKey = series.reduce(function buildDatum(acc: any, s: any) {
-    acc[s.id] = { datum: s.data[groupIndex] };
+  const catValue = categoryValues[groupIndex];
+  const categoryAccessor = isVertical ? xAccessor : yAccessor;
+  const datumBySeries = series.map(function resolveDatum(s) {
+    return {
+      id: s.id,
+      datum: findDatumByCategory(s.data, categoryAccessor, catValue)
+    };
+  });
+
+  const datumByKey = datumBySeries.reduce(function buildDatum(acc: any, { id, datum }) {
+    if (datum !== undefined) {
+      acc[id] = { datum };
+    }
     return acc;
   }, {});
 
   if (isVertical) {
     let minY = innerHeight;
-    for (const s of series) {
-      const yValue = yAccessor(s.data[groupIndex]);
+    for (const { datum } of datumBySeries) {
+      const yValue = datum !== undefined ? yAccessor(datum) : null;
       if (yValue !== null) {
         minY = Math.min(minY, (yScale(yValue as number) as number) ?? minY);
       }
@@ -223,14 +269,13 @@ export function computeTooltipPosition({
   }
 
   let extremeX = rtl ? innerWidth : 0;
-  for (const s of series) {
-    const xValue = xAccessor(s.data[groupIndex]);
+  for (const { datum } of datumBySeries) {
+    const xValue = datum !== undefined ? xAccessor(datum) : null;
     if (xValue !== null) {
       const scaledX = (valueScale(xValue as number) as number) ?? 0;
       extremeX = rtl ? Math.min(extremeX, scaledX) : Math.max(extremeX, scaledX);
     }
   }
-  const catValue = categoryValues[groupIndex];
   const yPos = (yScale(catValue as any) as number) || 0;
   const groupOffset = (categoryScale.bandwidth() - totalBarWidth) / 2;
   const barGroupTop = yPos + groupOffset;

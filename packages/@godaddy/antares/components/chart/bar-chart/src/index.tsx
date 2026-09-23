@@ -34,6 +34,7 @@ import { Bar } from '@visx/shape';
 import { cx } from 'cva';
 import { useLocale } from 'react-aria-components';
 import { useBarChart } from './use-bar-chart.ts';
+import { findDatumByCategory } from './utils.ts';
 
 /**
  * Helper type to determine if accessors are required based on data type.
@@ -290,9 +291,10 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
 
   return (
     <>
-      {orderedCategories.map(function renderBar(catValue, groupIndex) {
-        const dataIndex = rtl ? categoryValues.length - 1 - groupIndex : groupIndex;
-        const datum = seriesValue.data[dataIndex];
+      {orderedCategories.map(function renderBar(catValue) {
+        const categoryAccessor = isVertical ? xAccessor : yAccessor;
+        const datum = findDatumByCategory(seriesValue.data, categoryAccessor, catValue);
+        if (!datum) return null;
         // categoryColors is keyed by string; coerce so Date/number categories look up consistently.
         const categoryColorIndex = seriesValue.categoryColors?.[String(catValue)];
         const barColor = isValidColorIndex(categoryColorIndex) ? chartColorForIndex(categoryColorIndex) : seriesColor;
