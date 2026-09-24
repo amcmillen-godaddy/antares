@@ -67,26 +67,25 @@ export function getCategoryValues<T extends object>(
 }
 
 /**
- * Finds the datum in a series whose category matches `catValue`. Matching is by category
- * value (via the category accessor), not by array position, so a series with genuinely sparse
- * data — e.g. `[A, C]` against a global `[A, B, C]` — associates each value with the right
- * category instead of the slot it happens to occupy. Returns undefined when the series has no
- * datum for that category, letting callers skip rendering a bar or tooltip row for it.
- *
- * @param data - The series data points
- * @param categoryAccessor - Extracts the category value from a datum (x when vertical, y when horizontal)
- * @param catValue - The category value to match
- * @returns The matching datum, or undefined if the series has none for that category
+ * Indexes one series' data by category key so a datum can be looked up by category in O(1) rather
+ * than rescanning the series per category. First datum wins if a category repeats.
  */
-export function findDatumByCategory<T>(
+export function indexDataByCategory<T>(
   data: readonly T[],
-  categoryAccessor: (d: T) => number | string | Date | null,
-  catValue: number | string | Date
-): T | undefined {
-  const targetKey = categoryKey(catValue);
-  return data.find(function matchesCategory(d) {
-    return categoryKey(categoryAccessor(d)) === targetKey;
-  });
+  categoryAccessor: (d: T) => number | string | Date | null
+): Map<string, T> {
+  const index = new Map<string, T>();
+  for (const d of data) {
+    const key = categoryKey(categoryAccessor(d));
+    if (key !== null && !index.has(key)) index.set(key, d);
+  }
+  return index;
+}
+
+/** Looks up a series' datum for a category value in an index from {@link indexDataByCategory}. */
+export function findDatumInIndex<T>(index: ReadonlyMap<string, T>, catValue: number | string | Date): T | undefined {
+  const key = categoryKey(catValue);
+  return key === null ? undefined : index.get(key);
 }
 
 /**
@@ -218,6 +217,8 @@ interface TooltipPositionOptions {
   rtl: boolean;
   groupIndex: number;
   series: SeriesConfig<any>[];
+  /** Per-series category index (series id -> category key -> datum), built by `indexDataByCategory`. */
+  categoryIndexById: Map<string, ReadonlyMap<string, any>>;
   categoryValues: Array<number | string | Date>;
   xScale: (value: any) => number | undefined;
   yScale: (value: any) => number | undefined;
@@ -248,6 +249,7 @@ export function computeTooltipPosition({
   rtl,
   groupIndex,
   series,
+  categoryIndexById,
   categoryValues,
   xScale,
   yScale,
@@ -264,11 +266,11 @@ export function computeTooltipPosition({
   yAccessor
 }: TooltipPositionOptions) {
   const catValue = categoryValues[groupIndex];
-  const categoryAccessor = isVertical ? xAccessor : yAccessor;
   const datumBySeries = series.map(function resolveDatum(s) {
+    const index = categoryIndexById.get(s.id);
     return {
       id: s.id,
-      datum: findDatumByCategory(s.data, categoryAccessor, catValue)
+      datum: index ? findDatumInIndex(index, catValue) : undefined
     };
   });
 

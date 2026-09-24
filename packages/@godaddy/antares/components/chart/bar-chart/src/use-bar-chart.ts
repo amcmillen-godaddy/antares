@@ -19,6 +19,8 @@ const TOOLTIP_ARROW_HEIGHT = 8;
 
 interface UseBarChartOptions<T extends object> {
   series: SeriesConfig<T>[];
+  /** Per-series category index (series id -> category key -> datum), built by `indexDataByCategory`. */
+  categoryIndexById: Map<string, ReadonlyMap<string, T>>;
   orientation: 'vertical' | 'horizontal';
   rtl: boolean;
   xAccessor: Accessors<T>['xAccessor'];
@@ -34,6 +36,7 @@ interface UseBarChartOptions<T extends object> {
 
 export function useBarChart<T extends object>({
   series,
+  categoryIndexById,
   orientation,
   rtl,
   xAccessor,
@@ -162,6 +165,7 @@ export function useBarChart<T extends object>({
         rtl,
         groupIndex,
         series: series as SeriesConfig<any>[],
+        categoryIndexById,
         categoryValues,
         xScale: xScale as any,
         yScale: yScale as any,
@@ -181,6 +185,7 @@ export function useBarChart<T extends object>({
     },
     [
       series,
+      categoryIndexById,
       xScale,
       yScale,
       categoryScale,

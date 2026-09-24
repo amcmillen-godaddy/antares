@@ -15,7 +15,7 @@ import {
   yAccessor as defaultYAccessor,
   isValidColorIndex
 } from '../../utils.ts';
-import { type ReactNode, useCallback, useMemo, useRef } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useNormalizedSeries } from '#components/chart/_internal/use-normalized-series';
 import { useScrollableXYChart } from '#components/chart/_internal/use-scrollable-xy-chart';
 import { chartColorForIndex } from '#components/chart/_internal/use-chart-color';
@@ -34,7 +34,10 @@ import { Bar } from '@visx/shape';
 import { cx } from 'cva';
 import { useLocale } from 'react-aria-components';
 import { useBarChart } from './use-bar-chart.ts';
-import { allocateSeriesColorIndices, findDatumByCategory } from './utils.ts';
+import { allocateSeriesColorIndices, indexDataByCategory, findDatumInIndex } from './utils.ts';
+
+const canUseDOM = typeof window !== 'undefined';
+const useIsomorphicLayoutEffect = canUseDOM ? useLayoutEffect : useEffect;
 
 /**
  * Helper type to determine if accessors are required based on data type.
@@ -241,6 +244,8 @@ interface BarSeriesProps<
 > {
   /** The series config to render bars for. */
   seriesValue: S;
+  /** This series' category index (category key -> datum), for O(1) datum lookup per category. */
+  categoryIndex: ReadonlyMap<string, T>;
   /** Base bar color for this series, resolved once at the chart level (category colors still override per bar). */
   seriesColor: string;
   /** Zero-based index of this series among all series. */
@@ -283,6 +288,7 @@ interface BarSeriesProps<
 function BarSeries<T extends object>(props: BarSeriesProps<T>) {
   const {
     seriesValue,
+    categoryIndex,
     seriesColor,
     seriesIndex,
     numSeries,
@@ -307,8 +313,7 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
   return (
     <>
       {orderedCategories.map(function renderBar(catValue) {
-        const categoryAccessor = isVertical ? xAccessor : yAccessor;
-        const datum = findDatumByCategory(seriesValue.data, categoryAccessor, catValue);
+        const datum = findDatumInIndex(categoryIndex, catValue);
         if (!datum) return null;
         // categoryColors is keyed by string; coerce so Date/number categories look up consistently.
         const categoryColorIndex = seriesValue.categoryColors?.[String(catValue)];
@@ -420,6 +425,27 @@ export function BarChart<
 
   const series = useNormalizedSeries(seriesProp);
 
+  // Cast away the DataPoint-typed accessor default so it accepts the generic datum type.
+  const categoryAccessor = useMemo(
+    function getCategoryAccessor() {
+      return (orientation === 'vertical' ? xAccessor : yAccessor) as (datum: T) => number | string | Date | null;
+    },
+    [orientation, xAccessor, yAccessor]
+  );
+
+  // One category-keyed datum index per series, built once and shared by bar rendering and the
+  // tooltip so neither rescans series data per category.
+  const categoryIndexById = useMemo(
+    function buildCategoryIndexes() {
+      const indexes = new Map<string, ReadonlyMap<string, T>>();
+      for (const oneSeries of series) {
+        indexes.set(oneSeries.id, indexDataByCategory(oneSeries.data as T[], categoryAccessor));
+      }
+      return indexes;
+    },
+    [series, categoryAccessor]
+  );
+
   const {
     svgRef,
     isVertical,
@@ -439,6 +465,7 @@ export function BarChart<
     tooltip: { tooltipData, tooltipLeft, tooltipTop, tooltipOpen }
   } = useBarChart({
     series,
+    categoryIndexById,
     orientation,
     rtl,
     xAccessor: xAccessor as any,
@@ -454,9 +481,7 @@ export function BarChart<
 
   const { innerWidth, innerHeight, svgWidth, svgHeight } = dimensions;
 
-  // Cast away the DataPoint-typed accessor defaults
-  // so they accept the generic datum type.
-  const categoryAccessor = (isVertical ? xAccessor : yAccessor) as (datum: T) => number | string | Date | null;
+  // Cast away the DataPoint-typed accessor default so it accepts the generic datum type.
   const valueAccessor = (isVertical ? yAccessor : xAccessor) as (datum: T) => number | string | Date | null;
 
   // Stable palette index per series id, shared by bars, legend, and tooltip so their colors stay
@@ -464,16 +489,22 @@ export function BarChart<
   const seriesColorIndexRef = useRef<Map<string, number>>(new Map());
   const seriesColorIndexById = useMemo(
     function allocateColors() {
-      const next = allocateSeriesColorIndices(
+      return allocateSeriesColorIndices(
         seriesColorIndexRef.current,
         series.map(function toId(oneSeries) {
           return oneSeries.id;
         })
       );
-      seriesColorIndexRef.current = next;
-      return next;
     },
     [series]
+  );
+  // Commit the allocation after render, not during it, so an aborted concurrent render can't leave
+  // the ref ahead of committed state and skew the next allocation.
+  useIsomorphicLayoutEffect(
+    function persistColorIndices() {
+      seriesColorIndexRef.current = seriesColorIndexById;
+    },
+    [seriesColorIndexById]
   );
 
   const seriesWithColor = useMemo(
@@ -684,6 +715,7 @@ export function BarChart<
                   <BarSeries
                     key={seriesValue.id}
                     seriesValue={seriesValue}
+                    categoryIndex={categoryIndexById.get(seriesValue.id) ?? new Map<string, T>()}
                     seriesColor={seriesValue._resolvedColor}
                     seriesIndex={seriesIndex}
                     numSeries={numSeries}
