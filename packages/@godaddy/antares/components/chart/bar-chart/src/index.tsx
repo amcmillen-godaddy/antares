@@ -15,10 +15,10 @@ import {
   yAccessor as defaultYAccessor,
   isValidColorIndex
 } from '../../utils.ts';
-import { type ReactNode, useCallback, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef } from 'react';
 import { useNormalizedSeries } from '#components/chart/_internal/use-normalized-series';
 import { useScrollableXYChart } from '#components/chart/_internal/use-scrollable-xy-chart';
-import { chartColorForIndex, ChartColorProvider, useChartColor } from '#components/chart/_internal/use-chart-color';
+import { chartColorForIndex } from '#components/chart/_internal/use-chart-color';
 import { AxisBottom, AxisLeft, AxisRight } from '@visx/axis';
 import { AxisTitle } from '#components/chart/_internal/axis-title';
 import { GridColumns, GridRows } from '@visx/grid';
@@ -34,7 +34,7 @@ import { Bar } from '@visx/shape';
 import { cx } from 'cva';
 import { useLocale } from 'react-aria-components';
 import { useBarChart } from './use-bar-chart.ts';
-import { findDatumByCategory } from './utils.ts';
+import { allocateSeriesColorIndices, findDatumByCategory } from './utils.ts';
 
 /**
  * Helper type to determine if accessors are required based on data type.
@@ -226,6 +226,8 @@ interface BarSeriesProps<
 > {
   /** The series config to render bars for. */
   seriesValue: S;
+  /** Base bar color for this series, resolved once at the chart level (category colors still override per bar). */
+  seriesColor: string;
   /** Zero-based index of this series among all series. */
   seriesIndex: number;
   /** Total number of series in the chart. */
@@ -259,14 +261,14 @@ interface BarSeriesProps<
 }
 
 /**
- * Renders all bars for a single series across every category.
- * Defined as a component (rather than a render function) so that
- * `useChartColor` can be called once per series, assigning a stable
- * color index for the lifetime of the series in the chart.
+ * Renders all bars for a single series across every category. The base color is resolved at the
+ * chart level and passed in via `seriesColor`; a per-category `categoryColors` entry still overrides
+ * individual bars.
  */
 function BarSeries<T extends object>(props: BarSeriesProps<T>) {
   const {
     seriesValue,
+    seriesColor,
     seriesIndex,
     numSeries,
     categoryValues,
@@ -283,8 +285,6 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
     xAccessor,
     yAccessor
   } = props;
-  const fill = useChartColor();
-  const seriesColor = isValidColorIndex(seriesValue.colorIndex) ? chartColorForIndex(seriesValue.colorIndex) : fill;
   const effectiveSeriesIndex = rtl ? numSeries - 1 - seriesIndex : seriesIndex;
   const groupOffset = (categoryScale.bandwidth() - totalBarWidth) / 2;
   const orderedCategories = rtl ? [...categoryValues].reverse() : categoryValues;
@@ -444,11 +444,30 @@ export function BarChart<
   const categoryAccessor = (isVertical ? xAccessor : yAccessor) as (datum: T) => number | string | Date | null;
   const valueAccessor = (isVertical ? yAccessor : xAccessor) as (datum: T) => number | string | Date | null;
 
+  // Stable palette index per series id, shared by bars, legend, and tooltip so their colors stay
+  // in sync across series removal/reorder.
+  const seriesColorIndexRef = useRef<Map<string, number>>(new Map());
+  const seriesColorIndexById = useMemo(
+    function allocateColors() {
+      const next = allocateSeriesColorIndices(
+        seriesColorIndexRef.current,
+        series.map(function toId(oneSeries) {
+          return oneSeries.id;
+        })
+      );
+      seriesColorIndexRef.current = next;
+      return next;
+    },
+    [series]
+  );
+
   const seriesWithColor = useMemo(
     function getSeriesWithColor() {
       return series.map(function attachColor(oneSeries) {
-        const { colorIndex, categoryColors } = oneSeries;
-        const seriesColor = isValidColorIndex(colorIndex) ? chartColorForIndex(colorIndex) : undefined;
+        const { colorIndex, categoryColors, id } = oneSeries;
+        // An explicit colorIndex wins; otherwise use the id-keyed allocated index.
+        const paletteIndex = isValidColorIndex(colorIndex) ? colorIndex : (seriesColorIndexById.get(id) ?? 0);
+        const seriesColor = chartColorForIndex(paletteIndex);
         const resolveDatumColor = categoryColors
           ? function datumColor(datum: T) {
               const category = categoryAccessor(datum);
@@ -463,7 +482,7 @@ export function BarChart<
         };
       });
     },
-    [series, categoryAccessor]
+    [series, categoryAccessor, seriesColorIndexById]
   );
 
   const renderTooltip = useCallback(
@@ -475,23 +494,10 @@ export function BarChart<
           })
         );
         const firstDatum = Object.values(datumByKey)[0];
-        const tooltipSeries = seriesWithColor.map(function withTooltipColor(oneSeries, index) {
-          const defaultColor = chartColorForIndex(index);
-          const resolveDatumColor = oneSeries._resolveDatumColor
-            ? function resolveDatumColorWithDefault(datum: T) {
-                return oneSeries._resolveDatumColor?.(datum) ?? defaultColor;
-              }
-            : undefined;
-          return {
-            ...oneSeries,
-            _resolvedColor: oneSeries._resolvedColor ?? defaultColor,
-            _resolveDatumColor: resolveDatumColor
-          };
-        });
         const content = renderTooltipContent({
           hoveredCategory: firstDatum != null ? categoryAccessor(firstDatum) : undefined,
           datumByKey,
-          series: tooltipSeries as (InternalSeriesConfig<T, S['tooltipMetadata']> & {
+          series: seriesWithColor as (InternalSeriesConfig<T, S['tooltipMetadata']> & {
             id: string;
           })[]
         });
@@ -568,64 +574,120 @@ export function BarChart<
   }
 
   return (
-    <ChartColorProvider>
-      <Flex
-        direction="row"
-        dir={direction}
-        className={cx(styles.chart, className)}
-        data-legend-position={effectiveLegendPosition ? effectiveLegendPosition : undefined}
-        data-x-labels={xLabels ? 'true' : undefined}
-        data-y-labels={yLabels ? 'true' : undefined}
-        data-x-labels-vertical={xLabelsVertical ? 'true' : undefined}
-        data-x-baseline={xBaseline ? 'true' : undefined}
-        data-y-baseline={yBaseline ? 'true' : undefined}
-        data-x-tick-marks={xTickMarks ? 'true' : undefined}
-        data-y-tick-marks={yTickMarks ? 'true' : undefined}
-        data-x-gridlines={xGridlines ? 'true' : undefined}
-        data-y-gridlines={yGridlines ? 'true' : undefined}
-        style={{
-          ['--chart-width' as string]: width !== undefined ? `${width}px` : undefined,
-          ['--chart-height' as string]: height !== undefined ? `${height}px` : undefined
-        }}
-      >
-        {yAxisTitle && <AxisTitle axis="y" title={yAxisTitle} />}
-        <Flex direction="column" flex={1} className={styles.wrapper}>
-          {effectiveLegendPosition === 'top' && (
-            <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
-          )}
-          <Box ref={parentRef} dir={direction} className={styles.area}>
-            {series && chartWidth > 0 && chartHeight > 0 && (
-              <svg
-                ref={svgRef}
-                width={svgWidth}
-                height={svgHeight}
-                aria-label={ariaLabel}
-                role="img"
-                {...(desc ? { 'aria-describedby': 'barchart-desc' } : {})}
-              >
-                {desc && <desc id="barchart-desc">{desc}</desc>}
+    <Flex
+      direction="row"
+      dir={direction}
+      className={cx(styles.chart, className)}
+      data-legend-position={effectiveLegendPosition ? effectiveLegendPosition : undefined}
+      data-x-labels={xLabels ? 'true' : undefined}
+      data-y-labels={yLabels ? 'true' : undefined}
+      data-x-labels-vertical={xLabelsVertical ? 'true' : undefined}
+      data-x-baseline={xBaseline ? 'true' : undefined}
+      data-y-baseline={yBaseline ? 'true' : undefined}
+      data-x-tick-marks={xTickMarks ? 'true' : undefined}
+      data-y-tick-marks={yTickMarks ? 'true' : undefined}
+      data-x-gridlines={xGridlines ? 'true' : undefined}
+      data-y-gridlines={yGridlines ? 'true' : undefined}
+      style={{
+        ['--chart-width' as string]: width !== undefined ? `${width}px` : undefined,
+        ['--chart-height' as string]: height !== undefined ? `${height}px` : undefined
+      }}
+    >
+      {yAxisTitle && <AxisTitle axis="y" title={yAxisTitle} />}
+      <Flex direction="column" flex={1} className={styles.wrapper}>
+        {effectiveLegendPosition === 'top' && (
+          <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
+        )}
+        <Box ref={parentRef} dir={direction} className={styles.area}>
+          {series && chartWidth > 0 && chartHeight > 0 && (
+            <svg
+              ref={svgRef}
+              width={svgWidth}
+              height={svgHeight}
+              aria-label={ariaLabel}
+              role="img"
+              {...(desc ? { 'aria-describedby': 'barchart-desc' } : {})}
+            >
+              {desc && <desc id="barchart-desc">{desc}</desc>}
 
-                <Group top={margin.top} left={margin.left}>
-                  {yGridlines && <GridRows scale={yScale} width={innerWidth} className={styles.rows} />}
-                  {xGridlines && <GridColumns scale={xScale} height={innerHeight} className={styles.columns} />}
+              <Group top={margin.top} left={margin.left}>
+                {yGridlines && <GridRows scale={yScale} width={innerWidth} className={styles.rows} />}
+                {xGridlines && <GridColumns scale={xScale} height={innerHeight} className={styles.columns} />}
 
-                  {isVertical && (xBaseline || xTickMarks || xLabels) && (
-                    <AxisBottom
-                      axisClassName={styles.axisX}
-                      axisLineClassName={styles.baseline}
-                      tickClassName={styles.tickMark}
-                      innerRef={xAxisRef}
-                      top={innerHeight}
-                      scale={xScale}
-                      numTicks={xNumTicks}
-                      tickLength={tickLength}
-                      hideAxisLine={!xBaseline}
-                      tickFormat={formatXTick}
-                      tickLabelProps={xLabelsVertical ? getXLabelVerticalProps(rtl) : undefined}
-                    />
-                  )}
+                {isVertical && (xBaseline || xTickMarks || xLabels) && (
+                  <AxisBottom
+                    axisClassName={styles.axisX}
+                    axisLineClassName={styles.baseline}
+                    tickClassName={styles.tickMark}
+                    innerRef={xAxisRef}
+                    top={innerHeight}
+                    scale={xScale}
+                    numTicks={xNumTicks}
+                    tickLength={tickLength}
+                    hideAxisLine={!xBaseline}
+                    tickFormat={formatXTick}
+                    tickLabelProps={xLabelsVertical ? getXLabelVerticalProps(rtl) : undefined}
+                  />
+                )}
 
-                  {!isVertical && (yBaseline || yTickMarks || yLabels) && !rtl && (
+                {!isVertical && (yBaseline || yTickMarks || yLabels) && !rtl && (
+                  <AxisLeft
+                    axisClassName={styles.axisY}
+                    axisLineClassName={styles.baseline}
+                    tickClassName={styles.tickMark}
+                    innerRef={yAxisRef}
+                    scale={yScale}
+                    tickLength={tickLength}
+                    numTicks={yNumTicks}
+                    hideAxisLine={!yBaseline}
+                    tickFormat={formatYTick}
+                  />
+                )}
+
+                {!isVertical && (yBaseline || yTickMarks || yLabels) && rtl && (
+                  <AxisRight
+                    axisClassName={styles.axisY}
+                    axisLineClassName={styles.baseline}
+                    tickClassName={styles.tickMark}
+                    innerRef={yAxisRef}
+                    left={innerWidth}
+                    scale={yScale}
+                    tickLength={tickLength}
+                    numTicks={yNumTicks}
+                    hideAxisLine={!yBaseline}
+                    tickFormat={formatYTick}
+                  />
+                )}
+
+                {seriesWithColor.map((seriesValue, seriesIndex) => (
+                  <BarSeries
+                    key={seriesValue.id}
+                    seriesValue={seriesValue}
+                    seriesColor={seriesValue._resolvedColor}
+                    seriesIndex={seriesIndex}
+                    numSeries={numSeries}
+                    categoryValues={categoryValues}
+                    isVertical={isVertical}
+                    rtl={rtl}
+                    xScale={xScale}
+                    yScale={yScale}
+                    innerHeight={innerHeight}
+                    innerWidth={innerWidth}
+                    barWidth={barWidth}
+                    barPadding={barPadding}
+                    totalBarWidth={totalBarWidth}
+                    categoryScale={categoryScale}
+                    xAccessor={xAccessor as any}
+                    yAccessor={yAccessor as any}
+                  />
+                ))}
+                {(rtl ? [...categoryValues].reverse() : categoryValues).map(renderBarHitbox)}
+              </Group>
+
+              {isVertical && (yBaseline || yTickMarks || yLabels) && !rtl && (
+                <>
+                  <rect x={scrollLeft} y={0} width={margin.left} height={svgHeight} className={styles.axisBackground} />
+                  <g transform={`translate(${margin.left + scrollLeft}, ${margin.top})`}>
                     <AxisLeft
                       axisClassName={styles.axisY}
                       axisLineClassName={styles.baseline}
@@ -637,143 +699,80 @@ export function BarChart<
                       hideAxisLine={!yBaseline}
                       tickFormat={formatYTick}
                     />
-                  )}
+                  </g>
+                </>
+              )}
 
-                  {!isVertical && (yBaseline || yTickMarks || yLabels) && rtl && (
+              {isVertical && (yBaseline || yTickMarks || yLabels) && rtl && (
+                <>
+                  <rect
+                    x={svgWidth - margin.right + scrollLeft}
+                    y={0}
+                    width={margin.right}
+                    height={svgHeight}
+                    className={styles.axisBackground}
+                  />
+                  <g transform={`translate(${svgWidth - margin.right + scrollLeft}, ${margin.top})`}>
                     <AxisRight
                       axisClassName={styles.axisY}
                       axisLineClassName={styles.baseline}
                       tickClassName={styles.tickMark}
                       innerRef={yAxisRef}
-                      left={innerWidth}
                       scale={yScale}
                       tickLength={tickLength}
                       numTicks={yNumTicks}
-                      hideAxisLine={!yBaseline}
                       tickFormat={formatYTick}
+                      tickLabelProps={function getProps() {
+                        return {
+                          textAnchor: 'end' as const,
+                          dy: '.32em'
+                        };
+                      }}
                     />
-                  )}
+                  </g>
+                </>
+              )}
 
-                  {series.map((seriesValue, seriesIndex) => (
-                    <BarSeries
-                      key={seriesValue.id}
-                      seriesValue={seriesValue}
-                      seriesIndex={seriesIndex}
-                      numSeries={numSeries}
-                      categoryValues={categoryValues}
-                      isVertical={isVertical}
-                      rtl={rtl}
-                      xScale={xScale}
-                      yScale={yScale}
-                      innerHeight={innerHeight}
-                      innerWidth={innerWidth}
-                      barWidth={barWidth}
-                      barPadding={barPadding}
-                      totalBarWidth={totalBarWidth}
-                      categoryScale={categoryScale}
-                      xAccessor={xAccessor as any}
-                      yAccessor={yAccessor as any}
+              {!isVertical && (xBaseline || xTickMarks || xLabels) && (
+                <>
+                  <rect
+                    x={0}
+                    y={scrollTop + chartHeight - margin.bottom}
+                    width={svgWidth}
+                    height={margin.bottom}
+                    className={styles.axisBackground}
+                  />
+                  <g transform={`translate(${margin.left}, ${scrollTop + chartHeight - margin.bottom})`}>
+                    <AxisBottom
+                      axisClassName={styles.axisX}
+                      axisLineClassName={styles.baseline}
+                      tickClassName={styles.tickMark}
+                      innerRef={xAxisRef}
+                      scale={xScale}
+                      numTicks={xNumTicks}
+                      tickLength={tickLength}
+                      tickFormat={formatXTick}
+                      tickLabelProps={xLabelsVertical ? getXLabelVerticalProps(rtl) : undefined}
                     />
-                  ))}
-                  {(rtl ? [...categoryValues].reverse() : categoryValues).map(renderBarHitbox)}
-                </Group>
-
-                {isVertical && (yBaseline || yTickMarks || yLabels) && !rtl && (
-                  <>
-                    <rect
-                      x={scrollLeft}
-                      y={0}
-                      width={margin.left}
-                      height={svgHeight}
-                      className={styles.axisBackground}
-                    />
-                    <g transform={`translate(${margin.left + scrollLeft}, ${margin.top})`}>
-                      <AxisLeft
-                        axisClassName={styles.axisY}
-                        axisLineClassName={styles.baseline}
-                        tickClassName={styles.tickMark}
-                        innerRef={yAxisRef}
-                        scale={yScale}
-                        tickLength={tickLength}
-                        numTicks={yNumTicks}
-                        hideAxisLine={!yBaseline}
-                        tickFormat={formatYTick}
-                      />
-                    </g>
-                  </>
-                )}
-
-                {isVertical && (yBaseline || yTickMarks || yLabels) && rtl && (
-                  <>
-                    <rect
-                      x={svgWidth - margin.right + scrollLeft}
-                      y={0}
-                      width={margin.right}
-                      height={svgHeight}
-                      className={styles.axisBackground}
-                    />
-                    <g transform={`translate(${svgWidth - margin.right + scrollLeft}, ${margin.top})`}>
-                      <AxisRight
-                        axisClassName={styles.axisY}
-                        axisLineClassName={styles.baseline}
-                        tickClassName={styles.tickMark}
-                        innerRef={yAxisRef}
-                        scale={yScale}
-                        tickLength={tickLength}
-                        numTicks={yNumTicks}
-                        tickFormat={formatYTick}
-                        tickLabelProps={function getProps() {
-                          return {
-                            textAnchor: 'end' as const,
-                            dy: '.32em'
-                          };
-                        }}
-                      />
-                    </g>
-                  </>
-                )}
-
-                {!isVertical && (xBaseline || xTickMarks || xLabels) && (
-                  <>
-                    <rect
-                      x={0}
-                      y={scrollTop + chartHeight - margin.bottom}
-                      width={svgWidth}
-                      height={margin.bottom}
-                      className={styles.axisBackground}
-                    />
-                    <g transform={`translate(${margin.left}, ${scrollTop + chartHeight - margin.bottom})`}>
-                      <AxisBottom
-                        axisClassName={styles.axisX}
-                        axisLineClassName={styles.baseline}
-                        tickClassName={styles.tickMark}
-                        innerRef={xAxisRef}
-                        scale={xScale}
-                        numTicks={xNumTicks}
-                        tickLength={tickLength}
-                        tickFormat={formatXTick}
-                        tickLabelProps={xLabelsVertical ? getXLabelVerticalProps(rtl) : undefined}
-                      />
-                    </g>
-                  </>
-                )}
-              </svg>
-            )}
-          </Box>
-          {xAxisTitle && <AxisTitle axis="x" title={xAxisTitle} />}
-          {effectiveLegendPosition === 'bottom' && (
-            <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
+                  </g>
+                </>
+              )}
+            </svg>
           )}
-        </Flex>
-
-        {tooltipNode != null &&
-          createPortal(
-            <div className={styles.tooltipContainer} style={{ top: tooltipTop, left: tooltipLeft }}>
-              {tooltipNode}
-            </div>,
-            document.body
-          )}
+        </Box>
+        {xAxisTitle && <AxisTitle axis="x" title={xAxisTitle} />}
+        {effectiveLegendPosition === 'bottom' && (
+          <Legend series={seriesWithColor} className={styles.legend} alignSelf="center" />
+        )}
       </Flex>
-    </ChartColorProvider>
+
+      {tooltipNode != null &&
+        createPortal(
+          <div className={styles.tooltipContainer} style={{ top: tooltipTop, left: tooltipLeft }}>
+            {tooltipNode}
+          </div>,
+          document.body
+        )}
+    </Flex>
   );
 }

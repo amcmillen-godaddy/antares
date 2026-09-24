@@ -90,6 +90,38 @@ export function findDatumByCategory<T>(
 }
 
 /**
+ * Assigns each series a stable palette index keyed by id: a series keeps its index across
+ * re-renders, and a removed series' index is freed and reused (smallest first). Pure and
+ * idempotent, so it is safe to call during render.
+ *
+ * @param previous - The previously allocated `id → index` map (empty on first render)
+ * @param ids - The current series ids, in render order
+ * @returns A new `id → index` map
+ */
+export function allocateSeriesColorIndices(
+  previous: ReadonlyMap<string, number>,
+  ids: readonly string[]
+): Map<string, number> {
+  const next = new Map<string, number>();
+  const used = new Set<number>();
+  for (const id of ids) {
+    const index = previous.get(id);
+    if (index !== undefined) {
+      next.set(id, index);
+      used.add(index);
+    }
+  }
+  for (const id of ids) {
+    if (next.has(id)) continue;
+    let index = 0;
+    while (used.has(index)) index += 1;
+    next.set(id, index);
+    used.add(index);
+  }
+  return next;
+}
+
+/**
  * Computes the inner and total SVG dimensions for the chart.
  * When the data requires more space than the container provides (e.g. many bar groups),
  * the inner dimension expands beyond the container so the chart scrolls.

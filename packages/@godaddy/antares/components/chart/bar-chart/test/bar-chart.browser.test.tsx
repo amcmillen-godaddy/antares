@@ -1206,6 +1206,215 @@ describe('@godaddy/antares', function antares() {
       });
     });
 
+    describe('#color stability (remove / reorder series)', function colorStability() {
+      // Positional palette colors for indices 0/1/2 (chartColorForIndex).
+      const COLOR_0 = 'var(--ux-k4t5bc)';
+      const COLOR_1 = 'var(--ux-yscvvt)';
+      const COLOR_2 = 'var(--ux-3seoiy)';
+
+      // Three series with a datum at every category, so a hovered group shows all rows.
+      // Colors are allocated by id (S0->0, S1->1, S2->2) and must stay keyed to the id.
+      const S0 = {
+        id: 'S0',
+        name: 'S0',
+        data: [
+          { x: 'A', y: 10 },
+          { x: 'B', y: 20 },
+          { x: 'C', y: 30 }
+        ]
+      };
+      const S1 = {
+        id: 'S1',
+        name: 'S1',
+        data: [
+          { x: 'A', y: 11 },
+          { x: 'B', y: 21 },
+          { x: 'C', y: 31 }
+        ]
+      };
+      const S2 = {
+        id: 'S2',
+        name: 'S2',
+        data: [
+          { x: 'A', y: 12 },
+          { x: 'B', y: 22 },
+          { x: 'C', y: 32 }
+        ]
+      };
+      const S3 = {
+        id: 'S3',
+        name: 'S3',
+        data: [
+          { x: 'A', y: 13 },
+          { x: 'B', y: 23 },
+          { x: 'C', y: 33 }
+        ]
+      };
+
+      function legendSwatchColors(container: HTMLElement): string[] {
+        const swatches = container.querySelectorAll(
+          '[aria-label="Chart legend"] [role="listitem"] [style*="background-color"]'
+        );
+        return Array.from(swatches).map((el) => (el as HTMLElement).style.backgroundColor);
+      }
+
+      function barFillCounts(container: HTMLElement): Record<string, number> {
+        return Array.from(container.querySelectorAll('rect[rx="8"]')).reduce<Record<string, number>>(function tally(
+          acc,
+          el
+        ) {
+          const fill = el.getAttribute('fill') ?? '';
+          acc[fill] = (acc[fill] ?? 0) + 1;
+          return acc;
+        }, {});
+      }
+
+      // Reads a default-tooltip row's swatch color, matched by the series name it renders.
+      function defaultTooltipColorFor(name: string): string | undefined {
+        const rows = Array.from(document.body.querySelectorAll('[aria-label="Tooltip data"] [role="listitem"]'));
+        const row = rows.find((r) => (r.textContent ?? '').includes(name));
+        const swatch = row?.querySelector('[style*="background-color"]') as HTMLElement | undefined;
+        return swatch?.style.backgroundColor;
+      }
+
+      async function hoverGroup(container: HTMLElement, index: number) {
+        const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
+        const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
+        if (hitbox) {
+          await userEvent.hover(hitbox);
+        }
+        await new Promise((r) => setTimeout(r, 10));
+      }
+
+      // Renders via a series -> element factory so the same BarChart instance can be re-rendered
+      // with a different series list, exercising the color allocator's freed-slot reuse.
+      async function renderSeries(series: BarSeriesConfig[], extraProps: Partial<BarChartProps<any>> = {}) {
+        const el = (list: BarSeriesConfig[]) => (
+          <div style={{ width: '800px', height: '400px' }}>
+            <BarChart
+              xAccessor={(d: any) => d.x}
+              yAccessor={(d: any) => d.y}
+              series={list as SeriesConfig<any>[]}
+              {...extraProps}
+            />
+          </div>
+        );
+        const result = await render(el(series));
+        await waitForSelector(result.container, 'svg');
+        return { result, el };
+      }
+
+      // Emits one node per series tagged with its id and resolved color.
+      function customTip({ datumByKey, series: resolved }: any) {
+        return (
+          <div data-testid="tip">
+            {resolved.map(function seriesSwatch(s: any) {
+              const datum = datumByKey[s.id];
+              const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
+              return <span key={s.id} data-series={s.id} data-color={color} />;
+            })}
+          </div>
+        );
+      }
+
+      async function settle() {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      it('keeps remaining series colors stable and reuses the freed index (bar, legend, custom tooltip)', async function removeCustom() {
+        const { result, el } = await renderSeries([S0, S1, S2] as BarSeriesConfig[], { renderTooltip: customTip });
+        const { container } = result;
+
+        // Baseline: colors allocated by id in order.
+        const before = legendSwatchColors(container);
+        assume(before[0]).equals(COLOR_0);
+        assume(before[1]).equals(COLOR_1);
+        assume(before[2]).equals(COLOR_2);
+
+        // Remove the middle series. S2 must KEEP index 2 (COLOR_2), not shift down into S1's slot.
+        await result.rerender(el([S0, S2] as BarSeriesConfig[]));
+        await settle();
+
+        const legend = legendSwatchColors(container);
+        assume(legend.length).equals(2);
+        assume(legend[0]).equals(COLOR_0);
+        assume(legend[1]).equals(COLOR_2);
+
+        const counts = barFillCounts(container);
+        assume(counts[COLOR_0]).equals(3);
+        assume(counts[COLOR_2]).equals(3);
+        assume(counts[COLOR_1]).equals(undefined);
+
+        await hoverGroup(container, 0);
+        const tip = document.body.querySelector('[data-testid="tip"]');
+        assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
+        assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(COLOR_2);
+
+        // Adding a new series takes the smallest freed index (1 = COLOR_1), matching useChartColor.
+        await result.rerender(el([S0, S2, S3] as BarSeriesConfig[]));
+        await settle();
+        const legendAfterAdd = legendSwatchColors(container);
+        assume(legendAfterAdd[0]).equals(COLOR_0); // S0
+        assume(legendAfterAdd[1]).equals(COLOR_2); // S2
+        assume(legendAfterAdd[2]).equals(COLOR_1); // S3 reuses the index freed by S1
+      });
+
+      it('keeps remaining series colors stable in the default tooltip when a series is removed', async function removeDefault() {
+        const { result, el } = await renderSeries([S0, S1, S2] as BarSeriesConfig[]);
+        const { container } = result;
+
+        await result.rerender(el([S0, S2] as BarSeriesConfig[]));
+        await settle();
+
+        await hoverGroup(container, 0);
+        assume(defaultTooltipColorFor('S0')).equals(COLOR_0);
+        assume(defaultTooltipColorFor('S2')).equals(COLOR_2);
+
+        // Default tooltip swatches match the legend for the same series.
+        const legend = legendSwatchColors(container);
+        assume(defaultTooltipColorFor('S0')).equals(legend[0]);
+        assume(defaultTooltipColorFor('S2')).equals(legend[1]);
+      });
+
+      it('keeps colors keyed to series id (bar, legend, custom tooltip) when series are reordered', async function reorderCustom() {
+        const { result, el } = await renderSeries([S0, S1, S2] as BarSeriesConfig[], { renderTooltip: customTip });
+        const { container } = result;
+
+        // Reorder to [S2, S0, S1]; each series must carry its original color to the new position.
+        await result.rerender(el([S2, S0, S1] as BarSeriesConfig[]));
+        await settle();
+
+        const legend = legendSwatchColors(container);
+        assume(legend[0]).equals(COLOR_2); // S2
+        assume(legend[1]).equals(COLOR_0); // S0
+        assume(legend[2]).equals(COLOR_1); // S1
+
+        const counts = barFillCounts(container);
+        assume(counts[COLOR_0]).equals(3);
+        assume(counts[COLOR_1]).equals(3);
+        assume(counts[COLOR_2]).equals(3);
+
+        await hoverGroup(container, 0);
+        const tip = document.body.querySelector('[data-testid="tip"]');
+        assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
+        assume(tip!.querySelector('[data-series="S1"]')!.getAttribute('data-color')).equals(COLOR_1);
+        assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(COLOR_2);
+      });
+
+      it('keeps colors keyed to series id in the default tooltip when series are reordered', async function reorderDefault() {
+        const { result, el } = await renderSeries([S0, S1, S2] as BarSeriesConfig[]);
+        const { container } = result;
+
+        await result.rerender(el([S2, S0, S1] as BarSeriesConfig[]));
+        await settle();
+
+        await hoverGroup(container, 0);
+        assume(defaultTooltipColorFor('S0')).equals(COLOR_0);
+        assume(defaultTooltipColorFor('S1')).equals(COLOR_1);
+        assume(defaultTooltipColorFor('S2')).equals(COLOR_2);
+      });
+    });
+
     describe('#sparse categories (misaligned series lengths)', function sparseCategories() {
       async function hoverGroup(container: HTMLElement, index: number) {
         const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
