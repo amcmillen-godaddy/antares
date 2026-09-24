@@ -58,10 +58,13 @@ export interface BarSeriesConfig<
   T extends object = DataPoint,
   U extends Record<string, unknown> = Record<string, unknown>
 > extends SeriesConfig<T> {
+  /** Palette color index for the whole series (non-negative integer, wraps past the palette length). Omit to use the auto-assigned series color. */
   colorIndex?: number;
-  /* Map of category value to color index for bar corresponding to that category */
+  /** Per-bar color indices keyed by category value (coerced via `String(value)`); each index follows the same rules as `colorIndex`. Categories not listed fall back to the series color. */
   categoryColors?: Record<string, number>;
+  /** Series opacity from 0 to 1, applied to the bars, legend swatch, and tooltip swatch. */
   opacity?: number;
+  /** Arbitrary data passed through to a custom `renderTooltip` for this series. */
   tooltipMetadata?: U;
 }
 
