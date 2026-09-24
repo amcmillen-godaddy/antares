@@ -926,10 +926,9 @@ describe('@godaddy/antares', function antares() {
 
         const { container } = await renderBarChart({
           series,
-          renderTooltip: function renderTip({ hoveredCategory, datumByKey, series: resolved }) {
+          renderTooltip: function renderTip({ hoveredCategory, series: resolved }) {
             const s = resolved[0];
-            const datum = datumByKey[s.id];
-            const color = datum ? s._resolveDatumColor?.(datum) : undefined;
+            const color = s.color;
             return (
               <div data-testid="custom-tip" data-category={String(hoveredCategory)} data-color={color}>
                 {String(hoveredCategory)}
@@ -1096,11 +1095,9 @@ describe('@godaddy/antares', function antares() {
         const { container } = await renderBarChart({
           series,
           legendPosition: 'bottom',
-          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+          renderTooltip: function renderTip({ series: resolved }) {
             const s = resolved[0];
-            const datum = datumByKey[s.id];
-            const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
-            return <div data-testid="tip" data-color={color} />;
+            return <div data-testid="tip" data-color={s.color} />;
           }
         });
 
@@ -1160,13 +1157,11 @@ describe('@godaddy/antares', function antares() {
 
         const { container } = await renderBarChart({
           series,
-          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+          renderTooltip: function renderTip({ series: resolved }) {
             return (
               <div data-testid="tip">
                 {resolved.map(function seriesSwatch(s) {
-                  const datum = datumByKey[s.id];
-                  const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
-                  return <span key={s.id} data-series={s.id} data-color={color} />;
+                  return <span key={s.id} data-series={s.id} data-color={s.color} />;
                 })}
               </div>
             );
@@ -1305,13 +1300,11 @@ describe('@godaddy/antares', function antares() {
       }
 
       // Emits one node per series tagged with its id and resolved color.
-      function customTip({ datumByKey, series: resolved }: any) {
+      function customTip({ series: resolved }: any) {
         return (
           <div data-testid="tip">
             {resolved.map(function seriesSwatch(s: any) {
-              const datum = datumByKey[s.id];
-              const color = (datum ? s._resolveDatumColor?.(datum) : undefined) ?? s._resolvedColor;
-              return <span key={s.id} data-series={s.id} data-color={color} />;
+              return <span key={s.id} data-series={s.id} data-color={s.color} />;
             })}
           </div>
         );
@@ -1455,12 +1448,11 @@ describe('@godaddy/antares', function antares() {
       it('resolves each tooltip datum by category value, not array position', async function datumByCategory() {
         const { container } = await renderBarChart({
           series,
-          renderTooltip: function renderTip({ datumByKey, series: resolved }) {
+          renderTooltip: function renderTip({ series: resolved }) {
             return (
               <div data-testid="tip">
                 {resolved.map(function seriesRow(s) {
-                  const datum = datumByKey[s.id];
-                  return datum ? <span key={s.id} data-series={s.id} data-value={String(datum.y)} /> : null;
+                  return s.datum ? <span key={s.id} data-series={s.id} data-value={String(s.datum.y)} /> : null;
                 })}
               </div>
             );

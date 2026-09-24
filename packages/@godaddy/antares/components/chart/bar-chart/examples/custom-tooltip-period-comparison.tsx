@@ -33,30 +33,25 @@ const formatMoney = (v: number) => `$${v.toFixed(2)}`;
  * Period-over-period tooltip built from `renderTooltip`. The two series (this period /
  * previous period) share a `categoryColors` map, so each date's bars carry their own color;
  * the previous period is dropped to reduced opacity. Hovering a date shows both dated values
- * and the percent change, with the swatch colour pulled from the hovered category — via
- * `series._resolveDatumColor(datum)` — rather than a single series color.
+ * and the percent change, with the swatch color resolved per category on `current.color`.
  */
-function renderPaymentTooltip({
-  hoveredCategory,
-  datumByKey,
-  series
-}: BarChartTooltipRenderProps<DailyDatum, PaymentSeries>) {
+function renderPaymentTooltip({ hoveredCategory, series }: BarChartTooltipRenderProps<DailyDatum, PaymentSeries>) {
   const current = series.find((oneSeries) => oneSeries.tooltipMetadata?.period === 'current');
   const previous = series.find((oneSeries) => oneSeries.tooltipMetadata?.period === 'previous');
   if (!current || !previous) {
     return null;
   }
 
-  const currentDatum = datumByKey[current.id];
-  const previousDatum = datumByKey[previous.id];
+  const currentDatum = current.datum;
+  const previousDatum = previous.datum;
   if (!currentDatum || !previousDatum) {
     return null;
   }
 
   const currentValue = currentDatum.y;
   const previousValue = previousDatum.y;
-  // Per-category color: the colour of the hovered date's bars, not the series color.
-  const color = current._resolveDatumColor?.(currentDatum) ?? current._resolvedColor;
+  // Per-category color: the color of the hovered date's bars, resolved by BarChart.
+  const color = current.color;
   const label = String(hoveredCategory ?? '');
 
   const change = previousValue === 0 ? 0 : ((currentValue - previousValue) / previousValue) * 100;
