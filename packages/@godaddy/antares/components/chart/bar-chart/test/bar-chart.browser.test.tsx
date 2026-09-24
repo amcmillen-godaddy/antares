@@ -892,19 +892,21 @@ describe('@godaddy/antares', function antares() {
         const barGroups = container.querySelectorAll('g[role="group"][tabindex="0"]');
         assume(barGroups.length).is.above(1);
 
-        async function swatchColorForGroup(index: number) {
+        // The swatch is the only tooltip element with an inline background-color. categoryColors
+        // maps A -> index 2 and B -> index 4, so each hovered group resolves a distinct color.
+        async function swatchColorForGroup(index: number, expectedColor: string) {
           const hitbox = barGroups[index].querySelector('rect[fill="transparent"]');
           if (hitbox) {
             await userEvent.hover(hitbox);
           }
-          await new Promise((r) => setTimeout(r, 10));
-          // The swatch is the only tooltip element with an inline background-color.
+          // Wait for the swatch to render this group's color (the tooltip updates in place on re-hover).
+          await waitForSelector(document.body, `[aria-label="Tooltip data"] [style*="${expectedColor}"]`);
           const swatch = document.body.querySelector('[aria-label="Tooltip data"] [style*="background-color"]');
-          return swatch ? (swatch as HTMLElement).style.backgroundColor : null;
+          return (swatch as HTMLElement).style.backgroundColor;
         }
 
-        const colorA = await swatchColorForGroup(0);
-        const colorB = await swatchColorForGroup(1);
+        const colorA = await swatchColorForGroup(0, 'var(--ux-3seoiy)');
+        const colorB = await swatchColorForGroup(1, 'var(--ux-1c4rju4)');
 
         assume(colorA).exists();
         assume(colorB).exists();
@@ -944,7 +946,8 @@ describe('@godaddy/antares', function antares() {
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+
+        await waitForSelector(document.body, '[data-testid="custom-tip"]');
 
         const tip = document.body.querySelector('[data-testid="custom-tip"]');
         assume(tip).exists();
@@ -981,10 +984,12 @@ describe('@godaddy/antares', function antares() {
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
 
         // Two rows: full-opacity current, reduced-opacity previous.
-        const swatches = document.body.querySelectorAll('[aria-label="Tooltip data"] [style*="background-color"]');
+        const swatchSelector = '[aria-label="Tooltip data"] [style*="background-color"]';
+        await waitForSelector(document.body, swatchSelector);
+
+        const swatches = document.body.querySelectorAll(swatchSelector);
         assume(swatches.length).equals(2);
         assume((swatches[1] as HTMLElement).style.opacity).equals('0.4');
       });
@@ -1005,7 +1010,7 @@ describe('@godaddy/antares', function antares() {
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+        await waitForSelector(document.body, '[aria-label="Tooltip data"]');
 
         const tooltip = document.body.querySelector('[aria-label="Tooltip data"]');
         assume(tooltip).exists();
@@ -1039,7 +1044,7 @@ describe('@godaddy/antares', function antares() {
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+        await waitForSelector(document.body, '[aria-label="Tooltip data"]');
 
         const tooltip = document.body.querySelector('[aria-label="Tooltip data"]');
         assume(tooltip).exists();
@@ -1066,13 +1071,13 @@ describe('@godaddy/antares', function antares() {
         return Array.from(container.querySelectorAll('rect[rx="8"]')).map((el) => el.getAttribute('fill') ?? '');
       }
 
-      async function hoverGroup(container: HTMLElement, index: number) {
+      async function hoverGroup(container: HTMLElement, index: number, waitSelector: string) {
         const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
         const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+        await waitForSelector(document.body, waitSelector);
       }
 
       it('gives a category missing from categoryColors the series default, matching bar, legend, and tooltip', async function sparseCategoryColors() {
@@ -1111,12 +1116,12 @@ describe('@godaddy/antares', function antares() {
         assume(legendSwatchColors(container)[0]).equals(COLOR_0);
 
         // Hovering the mapped category resolves the mapped color, matching bar A.
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, `[data-testid="tip"][data-color="${COLOR_3}"]`);
         const mappedTip = document.body.querySelector('[data-testid="tip"]');
         assume(mappedTip!.getAttribute('data-color')).equals(COLOR_3);
 
         // Hovering an unmapped category resolves the default, matching bar B and the legend.
-        await hoverGroup(container, 1);
+        await hoverGroup(container, 1, `[data-testid="tip"][data-color="${COLOR_0}"]`);
         const unmappedTip = document.body.querySelector('[data-testid="tip"]');
         assume(unmappedTip!.getAttribute('data-color')).equals(COLOR_0);
       });
@@ -1189,7 +1194,7 @@ describe('@godaddy/antares', function antares() {
 
         // Group A: S1 is absent (its slot is empty), so the visible bars are S0 (slot 0) and S2
         // (slot 2). The tooltip must still report S2 as index 2 — not shift it into S1's color.
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, '[data-testid="tip"] [data-series="S0"]');
         const tip = document.body.querySelector('[data-testid="tip"]');
         assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
         assume(tip!.querySelector('[data-series="S1"]')!.getAttribute('data-color')).equals(COLOR_1);
@@ -1272,13 +1277,13 @@ describe('@godaddy/antares', function antares() {
         return swatch?.style.backgroundColor;
       }
 
-      async function hoverGroup(container: HTMLElement, index: number) {
+      async function hoverGroup(container: HTMLElement, index: number, waitSelector: string) {
         const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
         const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+        await waitForSelector(document.body, waitSelector);
       }
 
       // Renders via a series -> element factory so the same BarChart instance can be re-rendered
@@ -1338,7 +1343,7 @@ describe('@godaddy/antares', function antares() {
         assume(counts[COLOR_2]).equals(3);
         assume(counts[COLOR_1]).equals(undefined);
 
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, '[data-testid="tip"] [data-series="S0"]');
         const tip = document.body.querySelector('[data-testid="tip"]');
         assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
         assume(tip!.querySelector('[data-series="S2"]')!.getAttribute('data-color')).equals(COLOR_2);
@@ -1359,7 +1364,7 @@ describe('@godaddy/antares', function antares() {
         await result.rerender(el([S0, S2] as BarSeriesConfig[]));
         await settle();
 
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, '[aria-label="Tooltip data"]');
         assume(defaultTooltipColorFor('S0')).equals(COLOR_0);
         assume(defaultTooltipColorFor('S2')).equals(COLOR_2);
 
@@ -1387,7 +1392,7 @@ describe('@godaddy/antares', function antares() {
         assume(counts[COLOR_1]).equals(3);
         assume(counts[COLOR_2]).equals(3);
 
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, '[data-testid="tip"] [data-series="S0"]');
         const tip = document.body.querySelector('[data-testid="tip"]');
         assume(tip!.querySelector('[data-series="S0"]')!.getAttribute('data-color')).equals(COLOR_0);
         assume(tip!.querySelector('[data-series="S1"]')!.getAttribute('data-color')).equals(COLOR_1);
@@ -1401,7 +1406,7 @@ describe('@godaddy/antares', function antares() {
         await result.rerender(el([S2, S0, S1] as BarSeriesConfig[]));
         await settle();
 
-        await hoverGroup(container, 0);
+        await hoverGroup(container, 0, '[aria-label="Tooltip data"]');
         assume(defaultTooltipColorFor('S0')).equals(COLOR_0);
         assume(defaultTooltipColorFor('S1')).equals(COLOR_1);
         assume(defaultTooltipColorFor('S2')).equals(COLOR_2);
@@ -1409,13 +1414,13 @@ describe('@godaddy/antares', function antares() {
     });
 
     describe('#sparse categories (misaligned series lengths)', function sparseCategories() {
-      async function hoverGroup(container: HTMLElement, index: number) {
+      async function hoverGroup(container: HTMLElement, index: number, waitSelector: string) {
         const groups = container.querySelectorAll('g[role="group"][tabindex="0"]');
         const hitbox = groups[index]?.querySelector('rect[fill="transparent"]');
         if (hitbox) {
           await userEvent.hover(hitbox);
         }
-        await new Promise((r) => setTimeout(r, 10));
+        await waitForSelector(document.body, waitSelector);
       }
 
       const series = [
@@ -1461,14 +1466,14 @@ describe('@godaddy/antares', function antares() {
 
         // Category B (group 1): only 'full' has a datum. 'sparse' must be absent here — a
         // positional lookup would wrongly surface sparse.data[1] (its 'C' value, 300) under 'B'.
-        await hoverGroup(container, 1);
+        await hoverGroup(container, 1, '[data-testid="tip"] [data-series="full"][data-value="20"]');
         const bTip = document.body.querySelector('[data-testid="tip"]')!;
         assume(bTip.querySelector('[data-series="full"]')!.getAttribute('data-value')).equals('20');
         assume(bTip.querySelector('[data-series="sparse"]')).is.a('null');
 
         // Category C (group 2): 'sparse' resolves to its own 'C' datum (300), not undefined or a
         // shifted slot, alongside 'full' (30).
-        await hoverGroup(container, 2);
+        await hoverGroup(container, 2, '[data-testid="tip"] [data-series="full"][data-value="30"]');
         const cTip = document.body.querySelector('[data-testid="tip"]')!;
         assume(cTip.querySelector('[data-series="full"]')!.getAttribute('data-value')).equals('30');
         assume(cTip.querySelector('[data-series="sparse"]')!.getAttribute('data-value')).equals('300');
