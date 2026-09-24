@@ -315,8 +315,10 @@ function BarSeries<T extends object>(props: BarSeriesProps<T>) {
       {orderedCategories.map(function renderBar(catValue) {
         const datum = findDatumInIndex(categoryIndex, catValue);
         if (!datum) return null;
-        // categoryColors is keyed by string; coerce so Date/number categories look up consistently.
-        const categoryColorIndex = seriesValue.categoryColors?.[String(catValue)];
+        // Key by this datum's own category, not the group's canonical one, so a series' bar and tooltip
+        // agree when a Date and its numeric epoch share a category.
+        const datumCategory = isVertical ? xAccessor(datum) : yAccessor(datum);
+        const categoryColorIndex = seriesValue.categoryColors?.[datumCategory as string];
         const barColor = isValidColorIndex(categoryColorIndex) ? chartColorForIndex(categoryColorIndex) : seriesColor;
 
         if (isVertical) {
